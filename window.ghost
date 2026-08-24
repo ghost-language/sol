@@ -55,7 +55,7 @@ class Window {
   closeButtonBounds() {
     size = metrics.titlebarHeight - 3
 
-    return { x: this.x + this.w - size - 2, y: this.y + 2, w: size, h: size }
+    return { x: this.x + this.w - size - 1, y: this.y + 2, w: size, h: size }
   }
 
   resizeGripBounds() {
@@ -80,11 +80,11 @@ class WindowManager {
 
   open(app, x = null, y = null) {
     if (x == null) {
-      x = 54 + (this.windows.length() % 6) * 16
+      x = 56 + (this.windows.length() % 6) * 18
     }
 
     if (y == null) {
-      y = 20 + (this.windows.length() % 6) * 14
+      y = desktopTop() + 8 + (this.windows.length() % 6) * 16
     }
 
     win = new Window(app, x, y)
@@ -196,17 +196,17 @@ class WindowManager {
 
     minX = -(target.w - 24)
     maxX = 480 - 24
-    maxY = 270 - metrics.taskbarHeight - metrics.titlebarHeight
+    maxY = 270 - metrics.titlebarHeight
 
     target.x = math.max(minX, math.min(maxX, mx - this.dragOffsetX))
-    target.y = math.max(0, math.min(maxY, my - this.dragOffsetY))
+    target.y = math.max(desktopTop(), math.min(maxY, my - this.dragOffsetY))
   }
 
   applyResize(mx, my) {
     target = this.resizeTarget
 
     maxW = 480 - target.x
-    maxH = 270 - metrics.taskbarHeight - target.contentY()
+    maxH = 270 - target.contentY()
 
     target.w = math.max(target.minWidth, math.min(maxW, mx - target.x))
     target.h = math.max(target.minHeight, math.min(maxH, my - target.contentY()))
@@ -307,28 +307,35 @@ class WindowManager {
     }
   }
 
+  // A window wears its title the way Picotron does: a full-width bar, a menu
+  // grip on the left, the title centred, and the close box on the right. The
+  // focused window is the only one whose bar is filled with the accent, so
+  // which window has the keyboard is never in question.
   drawWindow(win, active) {
     canvas.setLineWidth(1)
 
-    titleColor = theme.titlebar
+    barColor = theme.titlebar
+    labelColor = theme.textDim
 
     if (active) {
-      titleColor = theme.titlebarActive
+      barColor = theme.titlebarActive
+      labelColor = theme.inverse
     }
 
     drawPanel(win.x, win.y, win.w, win.totalHeight())
 
-    canvas.setColor(titleColor)
+    canvas.setColor(barColor)
     canvas.filledRectangle(win.x + 1, win.y + 1, win.w - 2, metrics.titlebarHeight - 1)
 
-    canvas.setFont(fonts.body)
-    canvas.setColor(theme.text)
+    this.drawTitlebarGrip(win, labelColor)
 
-    label = truncate(fonts.body, win.app.title, win.w - metrics.titlebarHeight - 8)
+    canvas.setColor(labelColor)
 
-    canvas.print(label, win.x + 3, win.y + 2)
+    label = truncate(fonts.body, win.app.title, win.w - metrics.titlebarHeight * 2 - 6)
 
-    this.drawCloseButton(win)
+    fonts.body.printCentered(label, win.x + win.w / 2, win.y + 3)
+
+    this.drawCloseButton(win, active)
 
     canvas.push()
     canvas.translate(win.x, win.contentY())
@@ -346,29 +353,53 @@ class WindowManager {
     }
   }
 
-  drawCloseButton(win) {
+  // The grip is three stacked bars - the same shorthand for "this window has
+  // a menu" Picotron uses, and something to balance the close box across the
+  // centred title.
+  drawTitlebarGrip(win, tint) {
+    canvas.setColor(tint)
+
+    for (line = 0; line < 3; line++) {
+      canvas.filledRectangle(win.x + 3, win.y + 3 + line * 2, 5, 1)
+    }
+  }
+
+  drawCloseButton(win, active) {
     bounds = win.closeButtonBounds()
     hovered = hitTest(mouse.x, mouse.y, bounds.x, bounds.y, bounds.w, bounds.h)
 
-    fill = theme.panelDark
+    mark = theme.textDim
 
-    if (hovered) {
-      fill = theme.ember
+    if (active) {
+      mark = theme.inverse
     }
 
-    canvas.setColor(fill)
-    canvas.filledRectangle(bounds.x, bounds.y, bounds.w, bounds.h)
+    if (hovered) {
+      canvas.setColor(theme.ember)
+      canvas.filledRectangle(bounds.x, bounds.y, bounds.w, bounds.h)
 
-    canvas.setColor(theme.text)
-    canvas.line(bounds.x + 2, bounds.y + 2, bounds.x + bounds.w - 2, bounds.y + bounds.h - 2)
-    canvas.line(bounds.x + bounds.w - 2, bounds.y + 2, bounds.x + 2, bounds.y + bounds.h - 2)
+      mark = theme.text
+    }
+
+    canvas.setColor(mark)
+
+    for (step = 0; step < 4; step++) {
+      canvas.filledRectangle(bounds.x + 2 + step, bounds.y + 2 + step, 1, 1)
+      canvas.filledRectangle(bounds.x + 5 - step, bounds.y + 2 + step, 1, 1)
+    }
   }
 
+  // The resize grip is a corner of loose pixels rather than two hairlines:
+  // diagonal lines are the one primitive that cannot land on whole pixels at
+  // every scale, and a stipple reads as "drag me" just as well.
   drawGrip(win) {
     bounds = win.resizeGripBounds()
 
     canvas.setColor(theme.borderLight)
-    canvas.line(bounds.x, bounds.y + bounds.h, bounds.x + bounds.w, bounds.y)
-    canvas.line(bounds.x + 2, bounds.y + bounds.h, bounds.x + bounds.w, bounds.y + 2)
+
+    for (step = 0; step < 3; step++) {
+      canvas.filledRectangle(bounds.x + bounds.w - 2 - step * 2, bounds.y + bounds.h - 2, 1, 1)
+      canvas.filledRectangle(bounds.x + bounds.w - 2, bounds.y + bounds.h - 2 - step * 2, 1, 1)
+    }
   }
 }

@@ -1,165 +1,193 @@
 import "ghost:math"
-import "ghost:random"
 import "lumen:canvas"
 import "lumen:color"
+import { blit, wallpaperImage, wallpaperNames } from 'assets'
 
-// Every wallpaper is drawn, not loaded - Sol ships as Ghost source and
-// nothing else, so a wallpaper is a function rather than an image asset.
-// `draw(w, h)` paints the full desktop area, before icons and the taskbar go
-// on top of it.
+// A wallpaper is either one of the flat backgrounds below - a color, or a color
+// with a quiet pattern over it - or a PNG the owner dropped in the `wallpapers`
+// folder on Sol's disk. Nothing here is a picture of anything: the desktop is
+// furniture, and a busy background is the fastest way to make five pixel text
+// unreadable.
+//
+// Every pattern is drawn out of whole rectangles on a whole-pixel grid, so it
+// stays a crisp pattern rather than a moire at any scale the desktop is
+// stretched to.
 
-function verticalGradient(x, y, w, h, top, bottom, steps) {
-  stepHeight = h / steps
-
-  for (index = 0; index < steps; index++) {
-    amount = index / (steps - 1)
-
-    r = math.lerp(top[0], bottom[0], amount)
-    g = math.lerp(top[1], bottom[1], amount)
-    b = math.lerp(top[2], bottom[2], amount)
-
-    canvas.setColor(color.rgb(r, g, b))
-    canvas.filledRectangle(x, y + math.floor(index * stepHeight), w, math.ceil(stepHeight) + 1)
-  }
+palette = {
+  ink: color.rgb(9, 9, 13),
+  slate: color.rgb(28, 28, 36),
+  violet: color.rgb(26, 21, 44),
+  line: color.rgb(38, 38, 50),
+  dot: color.rgb(56, 54, 78)
 }
 
-function drawDawn(w, h) {
-  horizon = h * 0.68
-
-  verticalGradient(0, 0, w, horizon, [46, 28, 74], [255, 148, 84], 40)
-  verticalGradient(0, horizon, w, h - horizon, [201, 92, 70], [36, 18, 40], 16)
-
-  canvas.setColor(color.rgb(255, 214, 140))
-  canvas.filledCircle(w / 2, horizon - 4, 30)
-  canvas.setColor(color.rgb(255, 176, 72, 0.35))
-  canvas.filledCircle(w / 2, horizon - 4, 44)
-
-  canvas.setColor(color.rgb(20, 14, 28))
-  canvas.filledPolygon(
-    0, h, 0, horizon + 10,
-    70, horizon - 6, 140, horizon + 4,
-    210, horizon - 14, 260, horizon + 2,
-    260, h
-  )
-  canvas.filledPolygon(
-    260, h, 260, horizon + 6,
-    330, horizon - 10, 400, horizon + 2,
-    w, horizon - 8, w, h
-  )
+function fill(w, h, tint) {
+  canvas.setColor(tint)
+  canvas.filledRectangle(0, 0, w, h)
 }
 
-function buildStars(count) {
-  random.seed(7301)
-
-  stars = []
-
-  for (index = 0; index < count; index++) {
-    stars.push({
-      x: random.random(480),
-      y: random.random(270),
-      size: random.random(1, 3),
-      glow: random.random() > 0.85
-    })
-  }
-
-  return stars
+function drawInk(w, h) {
+  fill(w, h, palette.ink)
 }
 
-midnightStars = buildStars(140)
+function drawSlate(w, h) {
+  fill(w, h, palette.slate)
+}
 
-function drawMidnight(w, h) {
-  verticalGradient(0, 0, w, h, [8, 8, 22], [26, 18, 46], 24)
+function drawViolet(w, h) {
+  fill(w, h, palette.violet)
+}
 
-  for (index = 0; index < midnightStars.length(); index++) {
-    star = midnightStars[index]
+// A dot at every twelfth pixel: enough to tell that the desktop has a surface,
+// not enough to compete with anything put on top of it.
+function drawDots(w, h) {
+  fill(w, h, palette.ink)
 
-    if (star.glow) {
-      canvas.setColor(color.rgb(255, 226, 176, 0.5))
-    } else {
-      canvas.setColor(color.rgb(230, 230, 250, 0.8))
+  canvas.setColor(palette.dot)
+
+  spacing = 12
+
+  for (y = spacing; y < h; y = y + spacing) {
+    for (x = spacing; x < w; x = x + spacing) {
+      canvas.filledRectangle(x, y, 1, 1)
     }
-
-    canvas.filledCircle(star.x, star.y, star.size)
   }
-
-  canvas.setColor(color.rgb(226, 220, 200))
-  canvas.filledCircle(w * 0.78, h * 0.22, 16)
-  canvas.setColor(color.rgb(8, 8, 22, 0.5))
-  canvas.filledCircle(w * 0.78 - 6, h * 0.22 - 4, 15)
 }
 
 function drawGrid(w, h) {
-  verticalGradient(0, 0, w, h, [10, 9, 26], [30, 14, 46], 20)
+  fill(w, h, palette.ink)
 
-  horizon = h * 0.6
-  vanishX = w / 2
+  canvas.setColor(palette.line)
 
-  canvas.setColor(color.rgb(255, 108, 74, 0.7))
-  canvas.setLineWidth(1)
-  canvas.line(0, horizon, w, horizon)
+  spacing = 16
 
-  spread = 12
-
-  for (index = -spread; index <= spread; index++) {
-    canvas.setColor(color.rgb(90, 220, 220, 0.35))
-    canvas.line(vanishX, horizon, vanishX + index * 40, h)
+  for (x = 0; x < w; x = x + spacing) {
+    canvas.filledRectangle(x, 0, 1, h)
   }
 
-  rows = 10
-
-  for (row = 1; row <= rows; row++) {
-    amount = row / rows
-    y = horizon + (h - horizon) * (amount * amount)
-
-    canvas.setColor(color.rgb(90, 220, 220, 0.35 * (1 - amount * 0.6)))
-    canvas.line(0, y, w, y)
+  for (y = 0; y < h; y = y + spacing) {
+    canvas.filledRectangle(0, y, w, 1)
   }
 }
 
 function drawChecker(w, h) {
-  size = 18
+  fill(w, h, palette.ink)
 
-  canvas.setColor(color.rgb(32, 28, 46))
-  canvas.filledRectangle(0, 0, w, h)
+  canvas.setColor(palette.slate)
 
-  canvas.setColor(color.rgb(40, 36, 58))
-
-  cols = math.ceil(w / size) + 1
-  rows = math.ceil(h / size) + 1
+  size = 16
+  columns = math.ceil(w / size)
+  rows = math.ceil(h / size)
 
   for (row = 0; row < rows; row++) {
-    for (col = 0; col < cols; col++) {
-      if ((row + col) % 2 == 0) {
-        canvas.filledRectangle(col * size, row * size, size, size)
+    for (column = 0; column < columns; column++) {
+      if ((row + column) % 2 == 0) {
+        canvas.filledRectangle(column * size, row * size, size, size)
       }
     }
   }
 }
 
-function drawEmber(w, h) {
-  verticalGradient(0, 0, w, h, [42, 20, 30], [20, 12, 24], 18)
+// Every third row, one pixel tall: a CRT's worth of texture for three lines of
+// code.
+function drawScanlines(w, h) {
+  fill(w, h, palette.violet)
 
-  canvas.setColor(color.rgb(255, 108, 74, 0.12))
+  canvas.setColor(palette.ink)
 
-  for (index = -6; index < 14; index++) {
-    canvas.filledPolygon(
-      index * 46, h,
-      index * 46 + 26, h,
-      index * 46 - 90, 0,
-      index * 46 - 116, 0
-    )
+  for (y = 0; y < h; y = y + 3) {
+    canvas.filledRectangle(0, y, w, 1)
   }
 }
 
 wallpapers = [
-  { id: 'dawn', name: 'Dawn', draw: drawDawn },
-  { id: 'midnight', name: 'Midnight', draw: drawMidnight },
-  { id: 'grid', name: 'Horizon Grid', draw: drawGrid },
+  { id: 'ink', name: 'Ink', draw: drawInk },
+  { id: 'slate', name: 'Slate', draw: drawSlate },
+  { id: 'violet', name: 'Violet', draw: drawViolet },
+  { id: 'dots', name: 'Dots', draw: drawDots },
+  { id: 'grid', name: 'Grid', draw: drawGrid },
   { id: 'checker', name: 'Checker', draw: drawChecker },
-  { id: 'ember', name: 'Ember', draw: drawEmber }
+  { id: 'scanlines', name: 'Scanlines', draw: drawScanlines }
 ]
 
+// A PNG wallpaper is identified as `image:<filename>`, so one settings list can
+// hold both the built-in patterns and whatever is on the disk, and so a
+// wallpaper the owner later deletes falls back to a pattern rather than to a
+// crash.
+imagePrefix = 'image:'
+
+function imageId(name) {
+  return imagePrefix + name
+}
+
+function isImageId(id) {
+  return id.startsWith(imagePrefix)
+}
+
+function imageName(id) {
+  name = ''
+
+  for (index = imagePrefix.length(); index < id.length(); index++) {
+    name = name + id[index]
+  }
+
+  return name
+}
+
+// drawImage centres a PNG at whole-pixel scale rather than stretching it: a
+// wallpaper blown up by 1.37 is exactly the soft, smeared thing Sol is trying
+// not to be. Anything smaller than the desktop is scaled up in whole steps and
+// laid on the desktop color; anything larger is cropped to the middle.
+function drawImage(image, w, h) {
+  imageWidth = image.getWidth()
+  imageHeight = image.getHeight()
+
+  scale = math.floor(math.min(w / imageWidth, h / imageHeight))
+
+  if (scale < 1) {
+    scale = 1
+  }
+
+  drawWidth = imageWidth * scale
+  drawHeight = imageHeight * scale
+
+  fill(w, h, palette.ink)
+
+  blit(image, math.floor((w - drawWidth) / 2), math.floor((h - drawHeight) / 2), scale)
+}
+
+// options is what the settings app lists: the built-in patterns, then a row per
+// PNG on Sol's disk. It is rebuilt on request rather than cached, so dropping a
+// file into the wallpapers folder and reopening Settings is enough to see it.
+function options() {
+  list = []
+
+  for (index = 0; index < wallpapers.length(); index++) {
+    list.push({ id: wallpapers[index].id, name: wallpapers[index].name })
+  }
+
+  names = wallpaperNames()
+
+  for (index = 0; index < names.length(); index++) {
+    list.push({ id: imageId(names[index]), name: names[index] })
+  }
+
+  return list
+}
+
+// find returns something drawable for any id, including one naming a PNG that
+// has since been deleted.
 function find(id) {
+  if (isImageId(id)) {
+    image = wallpaperImage(imageName(id))
+
+    if (image != null) {
+      return { id: id, name: imageName(id), image: image, draw: null }
+    }
+
+    return wallpapers[0]
+  }
+
   for (index = 0; index < wallpapers.length(); index++) {
     if (wallpapers[index].id == id) {
       return wallpapers[index]
@@ -167,4 +195,20 @@ function find(id) {
   }
 
   return wallpapers[0]
+}
+
+// paint is what the desktop calls: it does not care whether the chosen
+// wallpaper turned out to be a pattern or a picture.
+function paint(id, w, h) {
+  chosen = find(id)
+
+  if (chosen.image != null) {
+    drawImage(chosen.image, w, h)
+
+    return null
+  }
+
+  painter = chosen.draw
+
+  painter(w, h)
 }

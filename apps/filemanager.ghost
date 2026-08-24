@@ -1,24 +1,35 @@
 import "ghost:math"
 import "lumen:canvas"
-import "lumen:color"
 import * from 'theme'
 import { Button, ScrollList, TextField, row } from 'widgets'
 import TextEdit from 'apps/textedit'
 
+// The two row glyphs are nine pixels of outline apiece - a tabbed rectangle
+// and a dog-eared page - which is as much folder and file as fits beside a
+// list row without crowding the name out of it.
 function drawRowFolderIcon(x, y) {
   canvas.setColor(theme.accent)
-  canvas.filledRectangle(x, y + 2, 9, 6)
+  canvas.filledRectangle(x, y + 1, 4, 1)
+  canvas.filledRectangle(x, y + 2, 9, 1)
+  canvas.filledRectangle(x, y + 7, 9, 1)
+  canvas.filledRectangle(x, y + 2, 1, 6)
+  canvas.filledRectangle(x + 8, y + 2, 1, 6)
+
   canvas.setColor(theme.accentDim)
-  canvas.filledRectangle(x, y + 1, 4, 2)
+  canvas.filledRectangle(x + 1, y + 3, 7, 4)
 }
 
 function drawRowFileIcon(x, y) {
   canvas.setColor(theme.textDim)
-  canvas.filledRectangle(x + 1, y, 7, 9)
-  canvas.setColor(theme.panel)
-  canvas.filledRectangle(x + 2, y + 2, 5, 1)
-  canvas.filledRectangle(x + 2, y + 4, 5, 1)
-  canvas.filledRectangle(x + 2, y + 6, 3, 1)
+  canvas.filledRectangle(x + 1, y, 6, 1)
+  canvas.filledRectangle(x + 1, y + 8, 6, 1)
+  canvas.filledRectangle(x + 1, y, 1, 9)
+  canvas.filledRectangle(x + 6, y + 2, 1, 7)
+  canvas.filledRectangle(x + 5, y, 1, 3)
+
+  canvas.setColor(theme.borderLight)
+  canvas.filledRectangle(x + 3, y + 3, 2, 1)
+  canvas.filledRectangle(x + 3, y + 5, 2, 1)
 }
 
 function iconFor(kind) {
@@ -277,9 +288,9 @@ class FileManager {
       this.deleteButton.draw(pointer)
       this.list.draw(pointer)
     } else {
-      canvas.setFont(fonts.body)
-      canvas.setColor(theme.text)
-      canvas.print(promptFor(this.mode), 2, 2)
+      canvas.setColor(theme.textDim)
+
+      fonts.body.print(promptFor(this.mode), 2, 2)
 
       this.field.draw()
       this.confirmButton.draw(pointer)
@@ -292,13 +303,14 @@ class FileManager {
   }
 
   drawMessage(w, h) {
-    canvas.setFont(fonts.tiny)
-
     barHeight = 11
 
-    canvas.setColor(color.rgb(20, 18, 34, 0.9))
+    canvas.setColor(theme.panelDark)
     canvas.filledRectangle(0, h - barHeight, w, barHeight)
-    canvas.setColor(theme.accent)
-    canvas.print(this.message, 3, h - barHeight + 2)
+    canvas.setColor(theme.border)
+    canvas.filledRectangle(0, h - barHeight, w, 1)
+    canvas.setColor(theme.signal)
+
+    fonts.body.print(this.message, 3, h - barHeight + 3)
   }
 }

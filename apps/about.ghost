@@ -1,7 +1,7 @@
 import "ghost:math"
 import "lumen:canvas"
-import "lumen:color"
 import * from 'theme'
+import { blit, iconImage } from 'assets'
 
 // About Sol - the simplest possible app, mostly here to prove that a window
 // needs nothing but a title, a size, and a draw() to exist.
@@ -9,48 +9,40 @@ import * from 'theme'
 class About {
   constructor(context) {
     this.title = 'About Sol'
-    this.width = 150
-    this.height = 110
+    this.width = 152
+    this.height = 122
     this.resizable = false
-    this.spin = 0
+    this.pulse = 0
   }
 
   update(dt, pointer) {
-    this.spin = this.spin + dt * 0.6
+    this.pulse = this.pulse + dt
   }
 
   draw(w, h, pointer) {
-    cx = w / 2
-    cy = 30
+    cx = math.floor(w / 2)
 
-    rays = 8
+    // Sol's own icon at double size, with four ticks around it that breathe
+    // rather than spin: a rotating shape this small is just a shape that
+    // shimmers.
+    reach = 26 + math.floor(math.sin(this.pulse * 2) * 2)
 
-    for (index = 0; index < rays; index++) {
-      angle = this.spin + index * (math.tau / rays)
-      x1 = cx + math.cos(angle) * 12
-      y1 = cy + math.sin(angle) * 12
-      x2 = cx + math.cos(angle) * 18
-      y2 = cy + math.sin(angle) * 18
+    canvas.setColor(theme.accentDim)
+    canvas.filledRectangle(cx - 1, 30 - reach, 2, 5)
+    canvas.filledRectangle(cx - 1, 30 + reach - 5, 2, 5)
+    canvas.filledRectangle(cx - reach, 28, 5, 2)
+    canvas.filledRectangle(cx + reach - 5, 28, 5, 2)
 
-      canvas.setColor(theme.accent)
-      canvas.setLineWidth(2)
-      canvas.line(x1, y1, x2, y2)
+    mark = iconImage('about')
+
+    if (mark != null) {
+      blit(mark, cx - 20, 9, 2)
     }
 
-    canvas.setColor(theme.accent)
-    canvas.filledCircle(cx, cy, 11)
-    canvas.setColor(theme.ember)
-    canvas.circle(cx, cy, 11)
-
-    canvas.setFont(fonts.heading)
     canvas.setColor(theme.text)
 
-    title = 'Sol'
-    titleWidth = fonts.heading.getWidth(title)
+    fonts.heading.printCentered('SOL', cx, 54)
 
-    canvas.print(title, cx - titleWidth / 2, 52)
-
-    canvas.setFont(fonts.tiny)
     canvas.setColor(theme.textDim)
 
     lines = [
@@ -61,10 +53,7 @@ class About {
     ]
 
     for (index = 0; index < lines.length(); index++) {
-      line = lines[index]
-      lineWidth = fonts.tiny.getWidth(line)
-
-      canvas.print(line, cx - lineWidth / 2, 70 + index * 9)
+      fonts.body.printCentered(lines[index], cx, 74 + index * 9)
     }
   }
 }

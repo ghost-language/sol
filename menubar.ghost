@@ -9,9 +9,15 @@ import TextEdit from 'apps/textedit'
 import SettingsApp from 'apps/settingsapp'
 import About from 'apps/about'
 
-itemHeight = 13
+// The menu bar runs along the top of the screen, the way Picotron's does: the
+// system button on the left, a tab per open window beside it, and the clock in
+// the right corner. It is the only chrome that is always on screen, so it stays
+// eleven pixels tall and says as little as it can get away with.
 
-// launcher builds one start-menu row. Needed for the same reason
+itemHeight = 12
+menuWidth = 84
+
+// launcher builds one system-menu row. Needed for the same reason
 // settingsapp.ghost's wallpaperToggle/screensaverToggle are: a closure made
 // directly inside the for-loop below would close over the loop's own shared
 // variable rather than a copy of it, so every row would launch whatever app
@@ -20,12 +26,12 @@ function launcher(label, build) {
   return { label: label, action: build }
 }
 
-class StartMenu {
+class SystemMenu {
   constructor(context) {
     this.open = false
 
     this.items = [
-      launcher('File Manager', function() { context.wm.open(new FileManager(context)) }),
+      launcher('Files', function() { context.wm.open(new FileManager(context)) }),
       launcher('Text Edit', function() { context.wm.open(new TextEdit(context, null)) }),
       launcher('Settings', function() { context.wm.open(new SettingsApp(context)) }),
       launcher('About Sol', function() { context.wm.open(new About(context)) })
@@ -41,9 +47,7 @@ class StartMenu {
   }
 
   bounds() {
-    height = this.items.length() * itemHeight + 4
-
-    return { x: 2, y: 270 - metrics.taskbarHeight - height, w: 96, h: height }
+    return { x: 0, y: metrics.menubarHeight, w: menuWidth, h: this.items.length() * itemHeight + 4 }
   }
 
   itemAt(px, py) {
@@ -89,54 +93,54 @@ class StartMenu {
     bounds = this.bounds()
 
     drawPanel(bounds.x, bounds.y, bounds.w, bounds.h)
-    canvas.setFont(fonts.body)
 
     for (index = 0; index < this.items.length(); index++) {
       rowY = bounds.y + 2 + index * itemHeight
+      hovered = hitTest(mouse.x, mouse.y, bounds.x + 1, rowY, bounds.w - 2, itemHeight)
+      labelColor = theme.text
 
-      if (hitTest(mouse.x, mouse.y, bounds.x + 2, rowY, bounds.w - 4, itemHeight)) {
-        canvas.setColor(theme.accentDim)
-        canvas.filledRectangle(bounds.x + 2, rowY, bounds.w - 4, itemHeight)
+      if (hovered) {
+        canvas.setColor(theme.accent)
+        canvas.filledRectangle(bounds.x + 1, rowY, bounds.w - 2, itemHeight)
+
+        labelColor = theme.inverse
       }
 
-      canvas.setColor(theme.text)
-      canvas.print(this.items[index].label, bounds.x + 6, rowY + 3)
+      canvas.setColor(labelColor)
+
+      fonts.body.print(this.items[index].label, bounds.x + 7, rowY + 3)
     }
   }
 }
 
-class Taskbar {
+class Menubar {
   constructor(context) {
     this.context = context
-    this.menu = new StartMenu(context)
+    this.menu = new SystemMenu(context)
   }
 
-  y() {
-    return 270 - metrics.taskbarHeight
+  systemButtonBounds() {
+    return { x: 0, y: 0, w: 13, h: metrics.menubarHeight }
   }
 
-  startButtonBounds() {
-    return { x: 2, y: this.y() + 2, w: 28, h: metrics.taskbarHeight - 4 }
-  }
-
-  taskButtonBounds(index) {
-    x = 34
+  tabBounds(index) {
+    x = 15
 
     for (slot = 0; slot < index; slot++) {
-      x = x + this.taskButtonWidth(this.context.wm.windows[slot]) + 3
+      x = x + this.tabWidth(this.context.wm.windows[slot]) + 2
     }
 
-    return { x: x, y: this.y() + 2, w: this.taskButtonWidth(this.context.wm.windows[index]), h: metrics.taskbarHeight - 4 }
+    return { x: x, y: 1, w: this.tabWidth(this.context.wm.windows[index]), h: metrics.menubarHeight - 2 }
   }
 
-  taskButtonWidth(win) {
-    return math.min(80, fonts.body.getWidth(win.app.title) + 10)
+  tabWidth(win) {
+    return math.min(74, fonts.body.getWidth(win.app.title) + 8)
   }
 
-  // update drives the clock, the start button, and the open-window strip,
-  // and reports whether this frame's click belongs to the taskbar - the
-  // start menu floats above everything else on screen, so it has to be
-  // asked before the window manager gets a look at the same click.
+  // update drives the system menu and the window tabs, and reports whether
+  // this frame's click belongs to the bar - the menu floats above everything
+  // else on screen, so it has to be asked before the window manager gets a
+  // look at the same click.
   update(dt) {
     pressed = mouse.wasButtonPressed('left')
 
@@ -148,9 +152,9 @@ class Taskbar {
       return true
     }
 
-    start = this.startButtonBounds()
+    system = this.systemButtonBounds()
 
-    if (hitTest(mouse.x, mouse.y, start.x, start.y, start.w, start.h)) {
+    if (hitTest(mouse.x, mouse.y, system.x, system.y, system.w, system.h)) {
       this.menu.toggle()
 
       return true
@@ -159,7 +163,7 @@ class Taskbar {
     windows = this.context.wm.windows
 
     for (index = 0; index < windows.length(); index++) {
-      bounds = this.taskButtonBounds(index)
+      bounds = this.tabBounds(index)
 
       if (hitTest(mouse.x, mouse.y, bounds.x, bounds.y, bounds.w, bounds.h)) {
         this.context.wm.bringToFront(windows[index])
@@ -168,7 +172,7 @@ class Taskbar {
       }
     }
 
-    if (mouse.y >= this.y()) {
+    if (mouse.y < metrics.menubarHeight) {
       return true
     }
 
@@ -177,69 +181,76 @@ class Taskbar {
 
   draw() {
     canvas.setColor(theme.panelDark)
-    canvas.filledRectangle(0, this.y(), 480, metrics.taskbarHeight)
-    canvas.setColor(theme.border)
-    canvas.line(0, this.y(), 480, this.y())
+    canvas.filledRectangle(0, 0, 480, metrics.menubarHeight)
 
-    this.drawStartButton()
-    this.drawTaskButtons()
+    canvas.setColor(theme.border)
+    canvas.filledRectangle(0, metrics.menubarHeight - 1, 480, 1)
+
+    this.drawSystemButton()
+    this.drawTabs()
     this.drawClock()
     this.menu.draw()
   }
 
-  drawStartButton() {
-    bounds = this.startButtonBounds()
-
+  // The system button is Sol's mark rather than its name: an aperture, a ring
+  // with a solid core, which is the one shape that still reads as a mark when
+  // it is seven pixels across.
+  drawSystemButton() {
+    bounds = this.systemButtonBounds()
     fill = theme.accent
 
-    if (this.menu.open) {
-      fill = theme.ember
+    if (this.menu.open or hitTest(mouse.x, mouse.y, bounds.x, bounds.y, bounds.w, bounds.h)) {
+      fill = theme.text
     }
 
     canvas.setColor(fill)
-    canvas.filledRectangle(bounds.x, bounds.y, bounds.w, bounds.h)
+    canvas.filledRectangle(bounds.x + 3, bounds.y + 2, 7, 7)
 
-    canvas.setFont(fonts.body)
     canvas.setColor(theme.panelDark)
+    canvas.filledRectangle(bounds.x + 4, bounds.y + 3, 5, 5)
 
-    label = 'Sol'
-    labelWidth = fonts.body.getWidth(label)
-
-    canvas.print(label, bounds.x + (bounds.w - labelWidth) / 2, bounds.y + 2)
+    canvas.setColor(fill)
+    canvas.filledRectangle(bounds.x + 5, bounds.y + 4, 3, 3)
   }
 
-  drawTaskButtons() {
+  drawTabs() {
     windows = this.context.wm.windows
     top = this.context.wm.focused()
 
-    canvas.setFont(fonts.body)
-
     for (index = 0; index < windows.length(); index++) {
       win = windows[index]
-      bounds = this.taskButtonBounds(index)
+      bounds = this.tabBounds(index)
 
-      fill = theme.panelLight
+      fill = theme.panel
+      labelColor = theme.textDim
 
       if (win == top) {
-        fill = theme.borderLight
+        fill = theme.accent
+        labelColor = theme.inverse
+      } else if (hitTest(mouse.x, mouse.y, bounds.x, bounds.y, bounds.w, bounds.h)) {
+        fill = theme.panelLight
+        labelColor = theme.text
       }
 
       canvas.setColor(fill)
       canvas.filledRectangle(bounds.x, bounds.y, bounds.w, bounds.h)
-      canvas.setColor(theme.text)
+
+      canvas.setColor(labelColor)
 
       label = truncate(fonts.body, win.app.title, bounds.w - 6)
 
-      canvas.print(label, bounds.x + 3, bounds.y + 2)
+      fonts.body.print(label, bounds.x + 3, bounds.y + 2)
     }
   }
 
   drawClock() {
     text = date.format(date.now(), 'HH:mm')
-    textWidth = fonts.body.getWidth(text)
 
-    canvas.setFont(fonts.body)
     canvas.setColor(theme.text)
-    canvas.print(text, 480 - textWidth - 4, this.y() + 2)
+
+    fonts.body.print(text, 480 - fonts.body.getWidth(text) - 4, 3)
+
+    canvas.setColor(theme.signal)
+    canvas.filledRectangle(480 - fonts.body.getWidth(text) - 9, 5, 2, 2)
   }
 }

@@ -1,0 +1,240 @@
+import "ghost:math"
+import "lumen:canvas"
+
+// Sol draws in a fixed 480x270 space that is scaled up in whole steps to fill
+// whatever window it is given, and a TrueType glyph is a texture: rasterised
+// once at six or seven pixels tall, then blown up three or four times on its
+// way to the screen. Blown-up antialiasing is what turns small text into grey
+// mush, and no amount of hinting fixes it at this size.
+//
+// So Sol draws its text as rectangles. A rectangle is geometry rather than a
+// texture, so it goes through the same scale the rest of the desktop does and
+// lands on whole pixels at any multiple: the letters stay as crisp as the
+// window chrome around them.
+//
+// Glyphs are authored below as rows of '.' and '#' - six rows of cap band
+// plus a seventh for the descenders on g, j, p, q, and y - and compiled once at
+// startup into horizontal runs, so drawing a character costs a handful of
+// filled rectangles rather than one per lit pixel.
+
+capHeight = 6
+descender = 1
+tracking = 1
+
+glyphSource = {
+  // uppercase, six rows tall
+  'A': ['.##.', '#..#', '#..#', '####', '#..#', '#..#'],
+  'B': ['###.', '#..#', '###.', '#..#', '#..#', '###.'],
+  'C': ['.###', '#...', '#...', '#...', '#...', '.###'],
+  'D': ['###.', '#..#', '#..#', '#..#', '#..#', '###.'],
+  'E': ['####', '#...', '###.', '#...', '#...', '####'],
+  'F': ['####', '#...', '###.', '#...', '#...', '#...'],
+  'G': ['.###', '#...', '#...', '#.##', '#..#', '.###'],
+  'H': ['#..#', '#..#', '#..#', '####', '#..#', '#..#'],
+  'I': ['###', '.#.', '.#.', '.#.', '.#.', '###'],
+  'J': ['..##', '...#', '...#', '...#', '#..#', '.##.'],
+  'K': ['#..#', '#.#.', '##..', '##..', '#.#.', '#..#'],
+  'L': ['#...', '#...', '#...', '#...', '#...', '####'],
+  'M': ['#...#', '##.##', '#.#.#', '#...#', '#...#', '#...#'],
+  'N': ['#..#', '##.#', '##.#', '#.##', '#.##', '#..#'],
+  'O': ['.##.', '#..#', '#..#', '#..#', '#..#', '.##.'],
+  'P': ['###.', '#..#', '#..#', '###.', '#...', '#...'],
+  'Q': ['.##.', '#..#', '#..#', '#..#', '#.#.', '.#.#'],
+  'R': ['###.', '#..#', '#..#', '###.', '#.#.', '#..#'],
+  'S': ['.###', '#...', '.##.', '...#', '#..#', '.##.'],
+  'T': ['###', '.#.', '.#.', '.#.', '.#.', '.#.'],
+  'U': ['#..#', '#..#', '#..#', '#..#', '#..#', '.##.'],
+  'V': ['#.#', '#.#', '#.#', '#.#', '#.#', '.#.'],
+  'W': ['#...#', '#...#', '#...#', '#.#.#', '#.#.#', '.#.#.'],
+  'X': ['#..#', '#..#', '.##.', '.##.', '#..#', '#..#'],
+  'Y': ['#.#', '#.#', '#.#', '.#.', '.#.', '.#.'],
+  'Z': ['####', '...#', '..#.', '.#..', '#...', '####'],
+
+  // lowercase, five rows of x-height, descenders on the seventh
+  'a': ['....', '.##.', '...#', '.###', '#..#', '.###'],
+  'b': ['#...', '#...', '###.', '#..#', '#..#', '###.'],
+  'c': ['....', '.###', '#...', '#...', '#...', '.###'],
+  'd': ['...#', '...#', '.###', '#..#', '#..#', '.###'],
+  'e': ['....', '.##.', '#..#', '####', '#...', '.###'],
+  'f': ['..##', '.#..', '####', '.#..', '.#..', '.#..'],
+  'g': ['....', '.###', '#..#', '#..#', '.###', '...#', '###.'],
+  'h': ['#...', '#...', '###.', '#..#', '#..#', '#..#'],
+  'i': ['#', '.', '#', '#', '#', '#'],
+  'j': ['..#', '...', '..#', '..#', '..#', '..#', '##.'],
+  'k': ['#..', '#.#', '#.#', '##.', '#.#', '#.#'],
+  'l': ['#', '#', '#', '#', '#', '#'],
+  'm': ['.....', '##.##', '#.#.#', '#.#.#', '#.#.#', '#.#.#'],
+  'n': ['....', '###.', '#..#', '#..#', '#..#', '#..#'],
+  'o': ['....', '.##.', '#..#', '#..#', '#..#', '.##.'],
+  'p': ['....', '###.', '#..#', '#..#', '###.', '#...', '#...'],
+  'q': ['....', '.###', '#..#', '#..#', '.###', '...#', '...#'],
+  'r': ['....', '#.##', '##..', '#...', '#...', '#...'],
+  's': ['....', '.###', '#...', '.##.', '...#', '###.'],
+  't': ['.#..', '.#..', '####', '.#..', '.#..', '..##'],
+  'u': ['....', '#..#', '#..#', '#..#', '#..#', '.###'],
+  'v': ['...', '#.#', '#.#', '#.#', '#.#', '.#.'],
+  'w': ['.....', '#...#', '#...#', '#.#.#', '#.#.#', '.#.#.'],
+  'x': ['....', '#..#', '#..#', '.##.', '#..#', '#..#'],
+  'y': ['....', '#..#', '#..#', '#..#', '.###', '...#', '###.'],
+  'z': ['....', '####', '...#', '.##.', '#...', '####'],
+
+  // digits
+  '0': ['.##.', '#..#', '#..#', '#..#', '#..#', '.##.'],
+  '1': ['.#.', '##.', '.#.', '.#.', '.#.', '###'],
+  '2': ['###.', '...#', '...#', '.##.', '#...', '####'],
+  '3': ['###.', '...#', '.##.', '...#', '...#', '###.'],
+  '4': ['#..#', '#..#', '#..#', '####', '...#', '...#'],
+  '5': ['####', '#...', '###.', '...#', '...#', '###.'],
+  '6': ['.###', '#...', '###.', '#..#', '#..#', '.##.'],
+  '7': ['####', '...#', '..#.', '..#.', '.#..', '.#..'],
+  '8': ['.##.', '#..#', '.##.', '#..#', '#..#', '.##.'],
+  '9': ['.##.', '#..#', '#..#', '.###', '...#', '###.'],
+
+  // punctuation
+  ' ': ['..', '..', '..', '..', '..', '..'],
+  '.': ['.', '.', '.', '.', '.', '#'],
+  ',': ['.', '.', '.', '.', '.', '#', '#'],
+  ':': ['.', '.', '#', '.', '#', '.'],
+  ';': ['.', '.', '#', '.', '#', '.', '#'],
+  '!': ['#', '#', '#', '#', '.', '#'],
+  '?': ['###.', '...#', '..#.', '.#..', '....', '.#..'],
+  "'": ['#', '#', '.', '.', '.', '.'],
+  '"': ['#.#', '#.#', '...', '...', '...', '...'],
+  '-': ['....', '....', '....', '####', '....', '....'],
+  '+': ['...', '...', '.#.', '###', '.#.', '...'],
+  '=': ['....', '....', '####', '....', '####', '....'],
+  '*': ['#.#', '.#.', '#.#', '...', '...', '...'],
+  '/': ['...#', '...#', '..#.', '.#..', '#...', '#...'],
+  '\\': ['#...', '#...', '.#..', '..#.', '...#', '...#'],
+  '_': ['....', '....', '....', '....', '....', '####'],
+  '(': ['.#', '#.', '#.', '#.', '#.', '.#'],
+  ')': ['#.', '.#', '.#', '.#', '.#', '#.'],
+  '[': ['##', '#.', '#.', '#.', '#.', '##'],
+  ']': ['##', '.#', '.#', '.#', '.#', '##'],
+  '{': ['.##', '.#.', '#..', '#..', '.#.', '.##'],
+  '}': ['##.', '.#.', '..#', '..#', '.#.', '##.'],
+  '<': ['...#', '..#.', '.#..', '.#..', '..#.', '...#'],
+  '>': ['#...', '.#..', '..#.', '..#.', '.#..', '#...'],
+  '%': ['#..#', '...#', '..#.', '.#..', '#...', '#..#'],
+  '#': ['.#.#', '####', '.#.#', '.#.#', '####', '.#.#'],
+  '@': ['.##.', '#..#', '#.##', '#.##', '#...', '.###'],
+  '&': ['.##.', '#..#', '.##.', '#.#.', '#..#', '.###'],
+  '|': ['#', '#', '#', '#', '#', '#'],
+  '~': ['....', '....', '.#.#', '#.#.', '....', '....'],
+  '^': ['.#.', '#.#', '...', '...', '...', '...'],
+  '`': ['#.', '.#', '..', '..', '..', '..'],
+  '$': ['.###', '##..', '.##.', '..##', '###.', '.#..']
+}
+
+// glyphs is filled in by compileGlyphs() rather than being reassigned, for the
+// same reason theme.ghost's `fonts` is: assignment in Ghost is scoped to the
+// function it happens in, so `glyphs = { ... }` inside a function would build
+// a local and leave the module's own map empty.
+glyphs = {}
+
+function compileGlyphs() {
+  for (character, rows in glyphSource) {
+    glyphs[character] = compileGlyph(rows)
+  }
+}
+
+// compileGlyph turns one glyph's rows into the list of horizontal runs that
+// cover its lit pixels: [x, y, width] each, longest stretch first come first.
+function compileGlyph(rows) {
+  runs = []
+
+  for (y = 0; y < rows.length(); y++) {
+    row = rows[y]
+    x = 0
+
+    while (x < row.length()) {
+      if (row[x] != '#') {
+        x = x + 1
+      } else {
+        run = 1
+
+        while (x + run < row.length() and row[x + run] == '#') {
+          run = run + 1
+        }
+
+        runs.push([x, y, run])
+
+        x = x + run
+      }
+    }
+  }
+
+  return { width: rows[0].length(), runs: runs }
+}
+
+function glyphFor(character) {
+  glyph = glyphs[character]
+
+  if (glyph == null) {
+    return glyphs['?']
+  }
+
+  return glyph
+}
+
+// PixelFont is one size of the font above: `scale` is how many desktop pixels
+// wide a glyph pixel is drawn, so the body font is a 1 and a heading is a 2.
+// Text is drawn in the current canvas color, like every other primitive.
+class PixelFont {
+  constructor(scale) {
+    this.scale = scale
+  }
+
+  // getHeight is the cap height, not the whole cell - it is what centring a
+  // label inside a button or a row wants, and a descender hanging one pixel
+  // below the box reads better than every line of text sitting a pixel high.
+  getHeight() {
+    return capHeight * this.scale
+  }
+
+  getLineHeight() {
+    return (capHeight + descender + 2) * this.scale
+  }
+
+  getWidth(text) {
+    total = 0
+
+    for (index = 0; index < text.length(); index++) {
+      total = total + (glyphFor(text[index]).width + tracking) * this.scale
+    }
+
+    if (total > 0) {
+      total = total - tracking * this.scale
+    }
+
+    return total
+  }
+
+  // print draws text with its top-left corner at (x, y). Both are floored:
+  // half a pixel of slack here is the one thing that would put a glyph back
+  // across two screen pixels and undo the point of drawing it as geometry.
+  print(text, x, y) {
+    scale = this.scale
+    penX = math.floor(x)
+    top = math.floor(y)
+
+    for (index = 0; index < text.length(); index++) {
+      glyph = glyphFor(text[index])
+      runs = glyph.runs
+
+      for (runIndex = 0; runIndex < runs.length(); runIndex++) {
+        run = runs[runIndex]
+
+        canvas.filledRectangle(penX + run[0] * scale, top + run[1] * scale, run[2] * scale, scale)
+      }
+
+      penX = penX + (glyph.width + tracking) * scale
+    }
+  }
+
+  // printCentered centres text on `cx` rather than starting at it, which is
+  // most of what the desktop does with a label.
+  printCentered(text, cx, y) {
+    this.print(text, cx - this.getWidth(text) / 2, y)
+  }
+}

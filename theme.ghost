@@ -1,38 +1,50 @@
 import "lumen:canvas"
 import "lumen:color"
-import "lumen:font"
+import * from 'pixelfont'
 
-// Sol's whole look in one place: a dusk-toned desktop with a warm sun accent,
-// so every window, button, and menu comes from the same handful of colors
-// rather than picking its own.
+// Sol's whole look in one place: a clear Tokyo night - near-black glass, cool
+// grey chrome, and one violet accent doing all the work a dozen colors would
+// otherwise be asked to do. Every window, button, and menu comes from this
+// handful of values rather than picking its own, so retinting the desktop is
+// a matter of editing the table below and nothing else.
 
 theme = {
-  desktop: color.rgb(14, 13, 24),
-  panel: color.rgb(30, 28, 48),
-  panelLight: color.rgb(41, 39, 64),
-  panelDark: color.rgb(20, 19, 34),
-  border: color.rgb(70, 66, 104),
-  borderLight: color.rgb(94, 89, 138),
-  titlebar: color.rgb(36, 33, 58),
-  titlebarActive: color.rgb(52, 39, 62),
-  text: color.rgb(238, 236, 250),
-  textDim: color.rgb(148, 143, 179),
-  accent: color.rgb(255, 176, 72),
-  accentDim: color.rgb(184, 122, 58),
-  ember: color.rgb(255, 108, 74),
-  good: color.rgb(123, 216, 143),
-  bad: color.rgb(255, 107, 107),
-  shadow: color.rgb(0, 0, 0, 0.4),
-  scrim: color.rgb(10, 9, 18, 0.55)
+  // The desktop itself, and the greys every panel is built from.
+  desktop: color.rgb(9, 9, 13),
+  panel: color.rgb(38, 38, 47),
+  panelLight: color.rgb(52, 52, 63),
+  panelDark: color.rgb(21, 21, 27),
+  border: color.rgb(70, 70, 86),
+  borderLight: color.rgb(104, 104, 124),
+
+  // Window chrome. An unfocused titlebar is just more grey; the focused one
+  // is the only place the accent covers a whole bar, which is what makes the
+  // active window obvious at a glance.
+  titlebar: color.rgb(46, 46, 57),
+  titlebarActive: color.rgb(122, 96, 200),
+
+  // Text. `inverse` is for text on top of the accent - a focused titlebar, a
+  // pressed toggle, an icon label chip - where near-white would glare.
+  text: color.rgb(230, 230, 238),
+  textDim: color.rgb(138, 138, 156),
+  inverse: color.rgb(16, 16, 22),
+
+  // The accent, and the two signal colors that go with it.
+  accent: color.rgb(150, 120, 236),
+  accentDim: color.rgb(84, 66, 140),
+  signal: color.rgb(110, 214, 232),
+  ember: color.rgb(236, 92, 138),
+
+  shadow: color.rgb(0, 0, 0, 0.5),
+  scrim: color.rgb(7, 7, 11, 0.6)
 }
 
 metrics = {
-  titlebarHeight: 10,
-  taskbarHeight: 13,
-  iconWidth: 40,
-  iconHeight: 34,
-  rowHeight: 10,
-  padding: 3
+  menubarHeight: 11,
+  titlebarHeight: 11,
+  iconWidth: 46,
+  iconHeight: 40,
+  rowHeight: 11
 }
 
 // fonts starts as a shell with its fields filled in by loadFonts() below,
@@ -41,17 +53,28 @@ metrics = {
 // create a local shadowing the module's own `fonts` instead of changing it.
 // Setting each property instead mutates the one every other file already
 // imported a reference to.
-fonts = { tiny: null, body: null, heading: null }
+fonts = { body: null, heading: null }
 
 function loadFonts() {
-  fonts.tiny = font.system(6)
-  fonts.body = font.system(7)
-  fonts.heading = font.system(9)
+  compileGlyphs()
+
+  fonts.body = new PixelFont(1)
+  fonts.heading = new PixelFont(2)
 }
 
+// desktopTop is the first row below the menu bar: where windows are allowed to
+// go, and where the desktop's own icons start.
+function desktopTop() {
+  return metrics.menubarHeight
+}
+
+// drawPanel is the shape every floating thing on the desktop shares - a menu,
+// a window, a dialog: a hard-edged panel with a solid shadow dropped one pixel
+// down and right. Nothing here is rounded or gradient-filled; a fantasy
+// workstation should look like it was drawn on a grid, because it was.
 function drawPanel(x, y, w, h) {
   canvas.setColor(theme.shadow)
-  canvas.filledRectangle(x + 1, y + 2, w, h)
+  canvas.filledRectangle(x + 2, y + 2, w, h)
 
   canvas.setColor(theme.panel)
   canvas.filledRectangle(x, y, w, h)
@@ -60,6 +83,9 @@ function drawPanel(x, y, w, h) {
   canvas.rectangle(x, y, w, h)
 }
 
+// drawInset is drawPanel's opposite: a well sunk into a panel, for anything
+// the desktop shows *into* rather than on top of - a list, a text field, a
+// preview.
 function drawInset(x, y, w, h) {
   canvas.setColor(theme.panelDark)
   canvas.filledRectangle(x, y, w, h)
@@ -68,31 +94,18 @@ function drawInset(x, y, w, h) {
   canvas.rectangle(x, y, w, h)
 }
 
-// drawButton draws a small chrome button. `pressed` highlights it with the
-// accent color, for a toggle or the currently active choice in a picker.
-function drawButton(x, y, w, h, label, hovered, pressed) {
-  fill = theme.panelLight
-
-  if (pressed) {
-    fill = theme.accentDim
-  } else if (hovered) {
-    fill = theme.borderLight
-  }
+// drawChip draws text on its own filled plate, the way a desktop icon's label
+// sits on one - the only way small text stays readable over a wallpaper it
+// knows nothing about.
+function drawChip(text, x, y, fill, textColor) {
+  width = fonts.body.getWidth(text)
 
   canvas.setColor(fill)
-  canvas.filledRectangle(x, y, w, h)
+  canvas.filledRectangle(x - 2, y - 1, width + 4, fonts.body.getHeight() + 3)
 
-  canvas.setColor(theme.border)
-  canvas.rectangle(x, y, w, h)
+  canvas.setColor(textColor)
 
-  if (label != null) {
-    canvas.setFont(fonts.body)
-    canvas.setColor(theme.text)
-
-    textWidth = fonts.body.getWidth(label)
-
-    canvas.print(label, x + (w - textWidth) / 2, y + (h - fonts.body.getHeight()) / 2)
-  }
+  fonts.body.print(text, x, y)
 }
 
 function hitTest(px, py, x, y, w, h) {

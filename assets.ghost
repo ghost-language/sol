@@ -1,0 +1,136 @@
+import "lumen:canvas"
+import "lumen:color"
+import "lumen:filesystem"
+import { Image } from "lumen:image"
+
+// Sol draws almost everything from primitives, but the three things a machine's
+// owner is most likely to want to replace - the pointer, the app icons, and the
+// wallpaper - are PNGs, and can be swapped without touching a line of Ghost.
+//
+// There are two places a PNG can live:
+//
+//   assets/            ships with Sol, in the source tree, and is always there
+//   <Sol's disk>/…     the sandboxed save folder, where the owner drops theirs
+//
+// Anything on the disk wins over the copy that ships. Nothing here ever fails
+// on a file that is not there: a missing image comes back as null, and every
+// caller has something to draw instead. That is what keeps a half-populated
+// icons folder from taking the desktop down with it.
+
+// Images are cached by path. Loading a PNG means decoding it and handing it to
+// the GPU, which is not something to do 60 times a second for a wallpaper that
+// has not changed.
+cache = {}
+missing = {}
+
+// A texture is tinted by the current draw color exactly the way a rectangle is
+// filled with it, so anything drawn from a PNG has to set the color back to
+// white first - otherwise an icon comes out in whatever color the last thing
+// drawn happened to leave behind.
+function blit(image, x, y, scale) {
+  canvas.setColor(color.white)
+
+  image.draw(x, y, 0, scale, scale)
+}
+
+function nearest(image) {
+  image.setFilter('nearest')
+
+  return image
+}
+
+// shipped loads one of the PNGs in Sol's own assets folder. These are part of
+// the source tree, so unlike a file on the disk they can be counted on.
+function shipped(relative) {
+  path = 'assets/' + relative
+  cached = cache[path]
+
+  if (cached != null) {
+    return cached
+  }
+
+  loaded = nearest(new Image(path))
+  cache[path] = loaded
+
+  return loaded
+}
+
+// fromDisk loads a PNG the owner put on Sol's disk, or returns null if there
+// isn't one there. `missing` remembers the misses as well as the hits, so a
+// desktop with no custom icons is not stat()ing four files every frame.
+function fromDisk(relative) {
+  cached = cache[relative]
+
+  if (cached != null) {
+    return cached
+  }
+
+  if (missing[relative] != null) {
+    return null
+  }
+
+  if (!filesystem.exists(relative)) {
+    missing[relative] = true
+
+    return null
+  }
+
+  loaded = nearest(new Image(filesystem.getSaveDirectory() + '/' + relative))
+  cache[relative] = loaded
+
+  return loaded
+}
+
+// forget drops a cached image so the next request reloads it - what the file
+// manager needs after a PNG has been added to or removed from the disk.
+function forget(relative) {
+  cache[relative] = null
+  missing[relative] = null
+}
+
+function cursorImage() {
+  fromOwner = fromDisk('cursor.png')
+
+  if (fromOwner != null) {
+    return fromOwner
+  }
+
+  return shipped('cursor.png')
+}
+
+// iconImage prefers icons/<name>.png on Sol's disk, then the one that ships
+// with it. A caller that gets null back draws its own glyph instead.
+function iconImage(name) {
+  fromOwner = fromDisk('icons/' + name + '.png')
+
+  if (fromOwner != null) {
+    return fromOwner
+  }
+
+  return shipped('icons/' + name + '.png')
+}
+
+function wallpaperImage(name) {
+  return fromDisk('wallpapers/' + name)
+}
+
+// wallpaperNames lists the PNGs sitting in the wallpapers folder on Sol's
+// disk, which is what the settings app offers below the built-in patterns.
+function wallpaperNames() {
+  names = []
+  entries = filesystem.getDirectoryItems('wallpapers')
+
+  if (entries == null) {
+    return names
+  }
+
+  for (index = 0; index < entries.length(); index++) {
+    name = entries[index]
+
+    if (name.endsWith('.png')) {
+      names.push(name)
+    }
+  }
+
+  return names
+}
