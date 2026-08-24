@@ -27,7 +27,8 @@ class SettingsApp {
 
     this.tabButtons = [
       new ToggleButton(4, 4, 60, 12, 'Wallpaper', function() { return self.tab == 'wallpaper' }, function() { self.tab = 'wallpaper' }),
-      new ToggleButton(66, 4, 68, 12, 'Screensaver', function() { return self.tab == 'screensaver' }, function() { self.tab = 'screensaver' })
+      new ToggleButton(66, 4, 68, 12, 'Screensaver', function() { return self.tab == 'screensaver' }, function() { self.tab = 'screensaver' }),
+      new ToggleButton(136, 4, 56, 12, 'Display', function() { return self.tab == 'display' }, function() { self.tab = 'display' })
     ]
 
     this.wallpaperList = new ScrollList(4, 20, 106, 96, metrics.rowHeight)
@@ -40,6 +41,9 @@ class SettingsApp {
     this.minusButton = new Button(4, 120, 12, 12, '-', function() { self.adjustIdle(-1) })
     this.plusButton = new Button(54, 120, 12, 12, '+', function() { self.adjustIdle(1) })
     this.previewButton = new Button(70, 120, 56, 12, 'Preview', function() { self.context.previewScreensaver() })
+
+    this.fullscreenButton = new ToggleButton(4, 20, 106, 14, 'Fullscreen', function() { return self.context.settings.fullscreen }, function() { self.context.settings.setFullscreen(!self.context.settings.fullscreen) })
+    this.pixelPerfectButton = new ToggleButton(4, 38, 106, 14, 'Pixel Perfect', function() { return self.context.settings.pixelPerfect }, function() { self.context.settings.setPixelPerfect(!self.context.settings.pixelPerfect) })
 
     this.reloadWallpapers()
     this.loadScreensavers()
@@ -109,10 +113,17 @@ class SettingsApp {
       return null
     }
 
-    this.screensaverList.update(pointer, dt)
-    this.minusButton.update(pointer)
-    this.plusButton.update(pointer)
-    this.previewButton.update(pointer)
+    if (this.tab == 'screensaver') {
+      this.screensaverList.update(pointer, dt)
+      this.minusButton.update(pointer)
+      this.plusButton.update(pointer)
+      this.previewButton.update(pointer)
+
+      return null
+    }
+
+    this.fullscreenButton.update(pointer)
+    this.pixelPerfectButton.update(pointer)
   }
 
   draw(w, h, pointer) {
@@ -128,8 +139,16 @@ class SettingsApp {
       return null
     }
 
-    this.screensaverList.draw(pointer)
-    this.drawIdleControls(pointer)
+    if (this.tab == 'screensaver') {
+      this.screensaverList.draw(pointer)
+      this.drawIdleControls(pointer)
+
+      return null
+    }
+
+    this.fullscreenButton.draw(pointer)
+    this.pixelPerfectButton.draw(pointer)
+    this.drawDisplayHelp()
   }
 
   // The preview is the real wallpaper, drawn small: the picker scales the
@@ -182,5 +201,21 @@ class SettingsApp {
     fonts.body.print(label, 18 + (32 - fonts.body.getWidth(label)) / 2, 123)
 
     this.previewButton.draw(pointer)
+  }
+
+  // Pixel Perfect and Fullscreen pull against each other on a screen whose
+  // resolution isn't a clean multiple of the desktop's 480x270: locking to
+  // whole-number scaling keeps art crisp but can leave real black bars once
+  // the window is as large as a display, the same tradeoff Picotron exposes
+  // through its own stretch and pixel_perfect settings.
+  drawDisplayHelp() {
+    canvas.setColor(theme.textDim)
+
+    fonts.body.print('Pixel Perfect keeps', 116, 22)
+    fonts.body.print('art crisp, but can', 116, 31)
+    fonts.body.print('leave black bars in', 116, 40)
+    fonts.body.print('fullscreen. Turn it', 116, 49)
+    fonts.body.print('off to fill the', 116, 58)
+    fonts.body.print('screen instead.', 116, 67)
   }
 }

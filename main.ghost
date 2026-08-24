@@ -50,7 +50,6 @@ game = {
 function load() {
   window.setTitle('Sol')
   window.setLogicalSize(canvasWidth, canvasHeight)
-  window.setPixelPerfect(true)
   window.setMode(startingWidth(), startingHeight())
 
   filesystem.setIdentity('sol')

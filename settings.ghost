@@ -1,18 +1,23 @@
 import "ghost:json"
 import "lumen:filesystem"
+import "lumen:window"
 
-// Sol's system preferences: which wallpaper and screensaver are active, and
-// how long the machine sits idle before the screensaver takes over. Saved
-// once, at the root of Sol's disk, next to the file manager's own folders
-// rather than inside them - it is not a document a user manages.
+// Sol's system preferences: which wallpaper and screensaver are active, how
+// long the machine sits idle before the screensaver takes over, and how the
+// desktop occupies the real window it has been given. Saved once, at the
+// root of Sol's disk, next to the file manager's own folders rather than
+// inside them - it is not a document a user manages.
 
 class Settings {
   constructor() {
     this.wallpaper = 'dots'
     this.screensaver = 'orbit'
     this.idleMinutes = 2
+    this.pixelPerfect = true
+    this.fullscreen = true
 
     this.load()
+    this.applyDisplay()
   }
 
   load() {
@@ -35,14 +40,33 @@ class Settings {
     if (data.idleMinutes != null) {
       this.idleMinutes = data.idleMinutes
     }
+
+    if (data.pixelPerfect != null) {
+      this.pixelPerfect = data.pixelPerfect
+    }
+
+    if (data.fullscreen != null) {
+      this.fullscreen = data.fullscreen
+    }
   }
 
   save() {
     filesystem.write('settings.json', json.encode({
       wallpaper: this.wallpaper,
       screensaver: this.screensaver,
-      idleMinutes: this.idleMinutes
+      idleMinutes: this.idleMinutes,
+      pixelPerfect: this.pixelPerfect,
+      fullscreen: this.fullscreen
     }))
+  }
+
+  // applyDisplay pushes the loaded (or default) display preferences onto the
+  // real window. Called once at startup, and again by every setter below so
+  // a change in the settings app takes hold immediately rather than waiting
+  // for the next launch.
+  applyDisplay() {
+    window.setPixelPerfect(this.pixelPerfect)
+    window.setFullscreen(this.fullscreen)
   }
 
   setWallpaper(id) {
@@ -60,6 +84,20 @@ class Settings {
   setIdleMinutes(minutes) {
     this.idleMinutes = minutes
 
+    this.save()
+  }
+
+  setPixelPerfect(enabled) {
+    this.pixelPerfect = enabled
+
+    window.setPixelPerfect(enabled)
+    this.save()
+  }
+
+  setFullscreen(enabled) {
+    this.fullscreen = enabled
+
+    window.setFullscreen(enabled)
     this.save()
   }
 }
