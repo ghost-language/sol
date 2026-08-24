@@ -24,6 +24,7 @@ class TextEdit {
     }
 
     this.title = this.titleFor(path)
+    this.icon = 'textedit'
 
     self = this
     this.saveButton = new Button(this.width - 38, 3, 34, 10, 'Save', function() {
@@ -90,28 +91,27 @@ class TextEdit {
 
     if (this.dirty) {
       canvas.setColor(theme.ember)
-      canvas.filledCircle(w - 44, 8, 2)
+      canvas.filledRectangle(w - 45, 6, 3, 3)
     }
 
     if (this.statusTimer > 0) {
-      canvas.setFont(fonts.tiny)
       canvas.setColor(theme.textDim)
-      canvas.print(this.status, 4, 4)
+
+      fonts.body.print(this.status, 4, 4)
     }
 
     canvas.setScissor(0, 16, w, h - 16)
-    canvas.setFont(fonts.body)
     canvas.setColor(theme.text)
-    this.drawText(4, 16)
+    this.drawText(4, 17)
     canvas.clearScissor()
   }
 
   drawText(x, y) {
     lines = this.text.split('\n')
-    lineHeight = fonts.body.getHeight() + 1
+    lineHeight = fonts.body.getLineHeight()
 
     for (index = 0; index < lines.length(); index++) {
-      canvas.print(lines[index], x, y + index * lineHeight)
+      fonts.body.print(lines[index], x, y + index * lineHeight)
     }
   }
 }

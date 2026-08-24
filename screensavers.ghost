@@ -36,7 +36,7 @@ class OrbitSaver {
   }
 
   draw(w, h) {
-    canvas.setColor(color.rgb(6, 5, 14))
+    canvas.setColor(theme.desktop)
     canvas.filledRectangle(0, 0, w, h)
 
     cx = w / 2
@@ -45,14 +45,14 @@ class OrbitSaver {
     for (index = 0; index < this.bodies.length(); index++) {
       body = this.bodies[index]
 
-      canvas.setColor(color.rgb(60, 56, 90, 0.5))
+      canvas.setColor(color.rgb(60, 56, 90, 0.45))
       canvas.circle(cx, cy, body.radius, 48)
     }
 
-    canvas.setColor(color.rgb(255, 214, 140))
-    canvas.filledCircle(cx, cy, 15)
-    canvas.setColor(color.rgb(255, 176, 72, 0.3))
-    canvas.filledCircle(cx, cy, 23)
+    canvas.setColor(theme.accent)
+    canvas.filledCircle(cx, cy, 13)
+    canvas.setColor(color.rgb(150, 120, 236, 0.25))
+    canvas.filledCircle(cx, cy, 21)
 
     for (index = 0; index < this.bodies.length(); index++) {
       body = this.bodies[index]
@@ -60,7 +60,7 @@ class OrbitSaver {
       x = cx + math.cos(body.angle) * body.radius
       y = cy + math.sin(body.angle) * body.radius * 0.42
 
-      canvas.setColor(color.rgb(200, 208, 255))
+      canvas.setColor(theme.text)
       canvas.filledCircle(x, y, body.size)
     }
   }
@@ -101,7 +101,7 @@ class StarfieldSaver {
   }
 
   draw(w, h) {
-    canvas.setColor(color.rgb(4, 4, 10))
+    canvas.setColor(theme.desktop)
     canvas.filledRectangle(0, 0, w, h)
 
     cx = w / 2
@@ -117,10 +117,10 @@ class StarfieldSaver {
       }
 
       brightness = math.clamp(1 - star.z, 0.2, 1)
-      size = math.max(1, 3 * (1 - star.z))
+      size = math.max(1, math.floor(3 * (1 - star.z)))
 
-      canvas.setColor(color.rgb(255, 255, 255, brightness))
-      canvas.filledCircle(sx, sy, size)
+      canvas.setColor(color.rgb(230, 230, 244, brightness))
+      canvas.filledRectangle(math.floor(sx), math.floor(sy), size, size)
     }
   }
 }
@@ -135,7 +135,7 @@ class BounceSaver {
     this.y = 30
     this.vx = 52
     this.vy = 38
-    this.hue = 24
+    this.tint = 0
     this.text = 'SOL'
   }
 
@@ -172,27 +172,35 @@ class BounceSaver {
     }
 
     if (bounced) {
-      this.hue = this.hue + 47
-
-      if (this.hue >= 360) {
-        this.hue = this.hue - 360
-      }
+      this.tint = (this.tint + 1) % 3
     }
   }
 
-  draw(w, h) {
-    canvas.setColor(color.rgb(6, 5, 14))
-    canvas.filledRectangle(0, 0, w, h)
+  // Three colors rather than a hue sweep: Sol has an accent and two signals,
+  // and a screensaver is not the place to introduce a fourth.
+  tintColor() {
+    if (this.tint == 1) {
+      return theme.signal
+    }
 
-    canvas.setFont(fonts.heading)
+    if (this.tint == 2) {
+      return theme.ember
+    }
+
+    return theme.accent
+  }
+
+  draw(w, h) {
+    canvas.setColor(theme.desktop)
+    canvas.filledRectangle(0, 0, w, h)
 
     boxW = fonts.heading.getWidth(this.text) + 14
     boxH = fonts.heading.getHeight() + 10
-    tint = color.hsl(this.hue, 0.68, 0.6)
 
-    canvas.setColor(tint)
-    canvas.rectangle(this.x, this.y, boxW, boxH)
-    canvas.print(this.text, this.x + 7, this.y + 5)
+    canvas.setColor(this.tintColor())
+    canvas.rectangle(math.floor(this.x), math.floor(this.y), boxW, boxH)
+
+    fonts.heading.print(this.text, this.x + 7, this.y + 5)
   }
 }
 

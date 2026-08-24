@@ -1,0 +1,282 @@
+import "ghost:date"
+import "ghost:math"
+import "lumen:canvas"
+import "lumen:mouse"
+import * from 'theme'
+import { truncate } from 'widgets'
+import FileManager from 'apps/filemanager'
+import TextEdit from 'apps/textedit'
+import SettingsApp from 'apps/settingsapp'
+import About from 'apps/about'
+
+// The menu bar runs along the top of the screen and belongs to whichever window
+// is focused, the way a Mac's does: Sol's own mark on the left opens the system
+// menu, the focused window's name beside it opens that window's menu, and the
+// clock sits in the right corner. Opening and arranging windows is the dock's
+// job, not this bar's.
+
+itemHeight = 12
+
+// menuItem builds one dropdown row. Needed for the same reason
+// settingsapp.ghost's pickers are: a closure made directly inside a for-loop
+// closes over the loop's own variable rather than a copy of it, so every row
+// built that way would run whatever the loop landed on last.
+function menuItem(label, action) {
+  return { label: label, action: action }
+}
+
+// Menu is one dropdown hanging off the bar. It is told where to hang and what
+// to list; everything else about it - hit testing, hover, closing on any click
+// it does not recognise - is the same for all of them.
+class Menu {
+  constructor(anchorX, width) {
+    this.anchorX = anchorX
+    this.width = width
+    this.items = []
+    this.open = false
+  }
+
+  setItems(items) {
+    this.items = items
+  }
+
+  toggle() {
+    this.open = !this.open
+  }
+
+  close() {
+    this.open = false
+  }
+
+  bounds() {
+    return { x: this.anchorX, y: metrics.menubarHeight, w: this.width, h: this.items.length() * itemHeight + 4 }
+  }
+
+  itemAt(px, py) {
+    bounds = this.bounds()
+
+    if (!hitTest(px, py, bounds.x, bounds.y, bounds.w, bounds.h)) {
+      return -1
+    }
+
+    index = math.floor((py - bounds.y - 2) / itemHeight)
+
+    if (index < 0 or index >= this.items.length()) {
+      return -1
+    }
+
+    return index
+  }
+
+  // handlePress reports whether it consumed the click - true both when an item
+  // ran and when the click was simply outside the open menu, since either way
+  // the menu closes and nothing under it should also react.
+  handlePress(px, py) {
+    if (!this.open) {
+      return false
+    }
+
+    index = this.itemAt(px, py)
+
+    if (index >= 0) {
+      action = this.items[index].action
+
+      action()
+    }
+
+    this.close()
+
+    return true
+  }
+
+  draw() {
+    if (!this.open) {
+      return null
+    }
+
+    bounds = this.bounds()
+
+    drawPanel(bounds.x, bounds.y, bounds.w, bounds.h)
+
+    for (index = 0; index < this.items.length(); index++) {
+      rowY = bounds.y + 2 + index * itemHeight
+      labelColor = theme.text
+
+      if (hitTest(mouse.x, mouse.y, bounds.x + 1, rowY, bounds.w - 2, itemHeight)) {
+        canvas.setColor(theme.accent)
+        canvas.filledRectangle(bounds.x + 1, rowY, bounds.w - 2, itemHeight)
+
+        labelColor = theme.inverse
+      }
+
+      canvas.setColor(labelColor)
+
+      fonts.body.print(this.items[index].label, bounds.x + 7, rowY + 3)
+    }
+  }
+}
+
+class Menubar {
+  constructor(context) {
+    this.context = context
+    this.systemMenu = new Menu(0, 84)
+    this.windowMenu = new Menu(15, 72)
+
+    self = this
+
+    this.systemMenu.setItems([
+      menuItem('Files', function() { context.wm.open(new FileManager(context)) }),
+      menuItem('Text Edit', function() { context.wm.open(new TextEdit(context, null)) }),
+      menuItem('Settings', function() { context.wm.open(new SettingsApp(context)) }),
+      menuItem('About Sol', function() { context.wm.open(new About(context)) })
+    ])
+
+    this.windowMenu.setItems([
+      menuItem('Minimize', function() { self.withFocused(function(win) { context.wm.minimize(win) }) }),
+      menuItem('Zoom', function() { self.withFocused(function(win) { win.toggleZoom() }) }),
+      menuItem('Close', function() { self.withFocused(function(win) { context.wm.close(win) }) })
+    ])
+  }
+
+  // withFocused runs something against the focused window, or nothing at all if
+  // there isn't one - which is what every entry in the window menu wants.
+  withFocused(action) {
+    win = this.context.wm.focused()
+
+    if (win != null) {
+      action(win)
+    }
+  }
+
+  systemButtonBounds() {
+    return { x: 0, y: 0, w: 13, h: metrics.menubarHeight }
+  }
+
+  // The window title's slot in the bar. It is only there while a window is
+  // focused, so its width follows the title rather than being reserved.
+  titleBounds() {
+    win = this.context.wm.focused()
+
+    if (win == null) {
+      return { x: 15, y: 0, w: 0, h: metrics.menubarHeight }
+    }
+
+    return { x: 15, y: 0, w: fonts.body.getWidth(this.titleFor(win)) + 8, h: metrics.menubarHeight }
+  }
+
+  titleFor(win) {
+    return truncate(fonts.body, win.app.title, 150)
+  }
+
+  // update drives both menus, and reports whether this frame's click belongs to
+  // the bar - a menu floats above everything else on screen, so it has to be
+  // asked before the window manager gets a look at the same click.
+  update(dt) {
+    pressed = mouse.wasButtonPressed('left')
+
+    if (!pressed) {
+      return false
+    }
+
+    if (this.systemMenu.handlePress(mouse.x, mouse.y)) {
+      return true
+    }
+
+    if (this.windowMenu.handlePress(mouse.x, mouse.y)) {
+      return true
+    }
+
+    system = this.systemButtonBounds()
+
+    if (hitTest(mouse.x, mouse.y, system.x, system.y, system.w, system.h)) {
+      this.windowMenu.close()
+      this.systemMenu.toggle()
+
+      return true
+    }
+
+    title = this.titleBounds()
+
+    if (title.w > 0 and hitTest(mouse.x, mouse.y, title.x, title.y, title.w, title.h)) {
+      this.systemMenu.close()
+      this.windowMenu.toggle()
+
+      return true
+    }
+
+    if (mouse.y < metrics.menubarHeight) {
+      return true
+    }
+
+    return false
+  }
+
+  draw() {
+    canvas.setColor(theme.panelDark)
+    canvas.filledRectangle(0, 0, 480, metrics.menubarHeight)
+
+    canvas.setColor(theme.border)
+    canvas.filledRectangle(0, metrics.menubarHeight - 1, 480, 1)
+
+    this.drawSystemButton()
+    this.drawTitle()
+    this.drawClock()
+
+    this.systemMenu.draw()
+    this.windowMenu.draw()
+  }
+
+  // The system button is Sol's mark rather than its name: an aperture, a ring
+  // with a solid core, which is the one shape that still reads as a mark when
+  // it is seven pixels across.
+  drawSystemButton() {
+    bounds = this.systemButtonBounds()
+    fill = theme.accent
+
+    if (this.systemMenu.open or hitTest(mouse.x, mouse.y, bounds.x, bounds.y, bounds.w, bounds.h)) {
+      fill = theme.text
+    }
+
+    canvas.setColor(fill)
+    canvas.filledRectangle(bounds.x + 3, bounds.y + 2, 7, 7)
+
+    canvas.setColor(theme.panelDark)
+    canvas.filledRectangle(bounds.x + 4, bounds.y + 3, 5, 5)
+
+    canvas.setColor(fill)
+    canvas.filledRectangle(bounds.x + 5, bounds.y + 4, 3, 3)
+  }
+
+  drawTitle() {
+    win = this.context.wm.focused()
+
+    if (win == null) {
+      return null
+    }
+
+    bounds = this.titleBounds()
+    labelColor = theme.text
+
+    if (this.windowMenu.open) {
+      canvas.setColor(theme.accent)
+      canvas.filledRectangle(bounds.x, bounds.y, bounds.w, bounds.h - 1)
+
+      labelColor = theme.inverse
+    }
+
+    canvas.setColor(labelColor)
+
+    fonts.body.print(this.titleFor(win), bounds.x + 4, 3)
+  }
+
+  drawClock() {
+    text = date.format(date.now(), 'HH:mm')
+
+    canvas.setColor(theme.text)
+
+    fonts.body.print(text, 480 - fonts.body.getWidth(text) - 4, 3)
+
+    canvas.setColor(theme.signal)
+    canvas.filledRectangle(480 - fonts.body.getWidth(text) - 9, 5, 2, 2)
+  }
+}

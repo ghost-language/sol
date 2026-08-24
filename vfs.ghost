@@ -175,8 +175,19 @@ function init() {
   if (!exists('', 'Pictures')) {
     createFolder('', 'Pictures')
   }
+
+  // The two folders Sol reads PNGs out of. They are created empty and stay
+  // that way until the owner puts something in them - what ships with Sol
+  // lives in its source tree, not on its disk.
+  if (!exists('', 'wallpapers')) {
+    createFolder('', 'wallpapers')
+  }
+
+  if (!exists('', 'icons')) {
+    createFolder('', 'icons')
+  }
 }
 
 function welcomeText() {
-  return 'Welcome to Sol.\n\nThis is a text file, sitting in your Documents folder on Sol\'s own little disk.\n\nDouble-click a file in File Manager to open it here in Text Edit. Type something, then press the Save button - it writes straight back to this file.\n\nRight around the corner: Settings, for a different wallpaper or screensaver.\n'
+  return 'Welcome to Sol.\n\nThis is a text file, sitting in your Documents folder on Sol\'s own little disk.\n\nDouble-click a file in File Manager to open it here in Text Edit. Type something, then press the Save button - it writes straight back to this file.\n\nRight around the corner: Settings, for a different wallpaper or screensaver.\n\nDrop a PNG into the wallpapers folder and it turns up in Settings. Drop one named files.png, textedit.png, settings.png, or about.png into icons and it replaces a desktop icon; cursor.png at the root replaces the pointer.\n'
 }

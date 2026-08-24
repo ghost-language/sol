@@ -1,10 +1,10 @@
 import "ghost:math"
 import "lumen:canvas"
-import "lumen:color"
 import "lumen:mouse"
 import "lumen:timer"
 import * from 'theme'
 import * from 'wallpapers'
+import { blit, iconImage } from 'assets'
 import FileManager from 'apps/filemanager'
 import TextEdit from 'apps/textedit'
 import SettingsApp from 'apps/settingsapp'
@@ -14,65 +14,100 @@ import About from 'apps/about'
 // built-in apps. `context` is the shared handle every app is built with:
 // { wm, vfs, settings } - the window manager to open windows in, the virtual
 // disk, and the saved preferences.
+//
+// Every icon is a 20x20 PNG out of assets/icons, which the machine's owner can
+// replace by dropping their own into `icons` on Sol's disk. The drawn glyphs
+// below are the fallback for an icon whose file has gone missing - a desktop
+// with a hole in it is worse than one drawn from primitives.
+
+iconSize = 20
 
 function drawFolderGlyph(x, y) {
-  canvas.setColor(theme.accentDim)
-  canvas.filledRectangle(x, y + 3, 10, 4)
   canvas.setColor(theme.accent)
-  canvas.filledRectangle(x, y + 6, 22, 14)
-  canvas.setColor(theme.panelDark)
-  canvas.rectangle(x, y + 6, 22, 14)
+  canvas.filledRectangle(x, y + 3, 8, 2)
+  canvas.rectangle(x, y + 5, 20, 13)
+
+  canvas.setColor(theme.accentDim)
+  canvas.filledRectangle(x + 1, y + 6, 18, 11)
+
+  canvas.setColor(theme.accent)
+  canvas.filledRectangle(x + 3, y + 9, 14, 1)
+  canvas.filledRectangle(x + 3, y + 12, 10, 1)
 }
 
 function drawDocumentGlyph(x, y) {
-  canvas.setColor(theme.text)
-  canvas.filledRectangle(x + 3, y + 1, 16, 20)
   canvas.setColor(theme.panelDark)
-  canvas.filledRectangle(x + 5, y + 5, 12, 1)
-  canvas.filledRectangle(x + 5, y + 9, 12, 1)
-  canvas.filledRectangle(x + 5, y + 13, 8, 1)
+  canvas.filledRectangle(x + 3, y + 1, 14, 18)
+
+  canvas.setColor(theme.text)
+  canvas.rectangle(x + 3, y + 1, 14, 18)
+  canvas.filledRectangle(x + 6, y + 5, 8, 1)
+  canvas.filledRectangle(x + 6, y + 8, 8, 1)
+  canvas.filledRectangle(x + 6, y + 11, 8, 1)
+
   canvas.setColor(theme.accent)
-  canvas.filledPolygon(x + 15, y + 1, x + 19, y + 1, x + 19, y + 5)
+  canvas.filledRectangle(x + 6, y + 14, 5, 1)
 }
 
-function drawGearGlyph(x, y) {
-  cx = x + 11
-  cy = y + 11
-  teeth = 8
-
+// Settings is a rack of sliders rather than the usual gear: three tracks with
+// a handle each says "these are the knobs" without needing curves to survive
+// being twenty pixels wide.
+function drawSlidersGlyph(x, y) {
   canvas.setColor(theme.borderLight)
 
-  for (index = 0; index < teeth; index++) {
-    angle = index * (math.tau / teeth)
-    tx = cx + 9 * math.cos(angle)
-    ty = cy + 9 * math.sin(angle)
-
-    canvas.filledCircle(tx, ty, 3)
+  for (index = 0; index < 3; index++) {
+    canvas.filledRectangle(x + 2, y + 4 + index * 6, 16, 2)
   }
 
-  canvas.filledCircle(cx, cy, 9)
-  canvas.setColor(theme.panelDark)
-  canvas.filledCircle(cx, cy, 4)
+  canvas.setColor(theme.accent)
+  canvas.filledRectangle(x + 12, y + 2, 4, 6)
+  canvas.filledRectangle(x + 4, y + 8, 4, 6)
+  canvas.filledRectangle(x + 13, y + 14, 4, 6)
 }
 
-function drawInfoGlyph(x, y) {
-  cx = x + 11
-  cy = y + 11
+// The same aperture the menu bar wears, at desktop size: a ring, a gap, and a
+// solid core.
+function drawMarkGlyph(x, y) {
+  canvas.setColor(theme.accent)
+  canvas.filledRectangle(x + 1, y + 1, 18, 18)
+
+  canvas.setColor(theme.desktop)
+  canvas.filledRectangle(x + 4, y + 4, 12, 12)
 
   canvas.setColor(theme.accent)
-  canvas.filledCircle(cx, cy, 10)
-  canvas.setColor(theme.panelDark)
-  canvas.filledRectangle(cx - 1, cy - 5, 2, 2)
-  canvas.filledRectangle(cx - 1, cy - 1, 2, 7)
+  canvas.filledRectangle(x + 7, y + 7, 6, 6)
+
+  canvas.setColor(theme.desktop)
+  canvas.filledRectangle(x + 9, y + 1, 2, 4)
+  canvas.filledRectangle(x + 9, y + 15, 2, 4)
+  canvas.filledRectangle(x + 1, y + 9, 4, 2)
+  canvas.filledRectangle(x + 15, y + 9, 4, 2)
 }
 
 class DesktopIcon {
-  constructor(x, y, label, glyph, action) {
+  constructor(x, y, label, name, glyph, action) {
     this.x = x
     this.y = y
     this.label = label
+    this.name = name
     this.glyph = glyph
     this.action = action
+  }
+
+  // draw prefers the icon's PNG and falls back to its drawn glyph. Both land
+  // in the same 20x20 box, so the column lines up either way.
+  drawGlyph(x, y) {
+    image = iconImage(this.name)
+
+    if (image != null) {
+      blit(image, x, y, 1)
+
+      return null
+    }
+
+    glyph = this.glyph
+
+    glyph(x, y)
   }
 
   bounds() {
@@ -91,25 +126,22 @@ class Desktop {
 
   buildIcons() {
     context = this.context
+    top = desktopTop() + 6
 
     return [
-      new DesktopIcon(8, 8, 'Files', drawFolderGlyph, function() {
+      new DesktopIcon(7, top, 'Files', 'files', drawFolderGlyph, function() {
         context.wm.open(new FileManager(context))
       }),
-      new DesktopIcon(8, 8 + metrics.iconHeight, 'Text Edit', drawDocumentGlyph, function() {
+      new DesktopIcon(7, top + metrics.iconHeight, 'Text Edit', 'textedit', drawDocumentGlyph, function() {
         context.wm.open(new TextEdit(context, null))
       }),
-      new DesktopIcon(8, 8 + metrics.iconHeight * 2, 'Settings', drawGearGlyph, function() {
+      new DesktopIcon(7, top + metrics.iconHeight * 2, 'Settings', 'settings', drawSlidersGlyph, function() {
         context.wm.open(new SettingsApp(context))
       }),
-      new DesktopIcon(8, 8 + metrics.iconHeight * 3, 'About Sol', drawInfoGlyph, function() {
+      new DesktopIcon(7, top + metrics.iconHeight * 3, 'About Sol', 'about', drawMarkGlyph, function() {
         context.wm.open(new About(context))
       })
     ]
-  }
-
-  currentWallpaper() {
-    return find(this.context.settings.wallpaper)
   }
 
   iconAt(px, py) {
@@ -161,27 +193,27 @@ class Desktop {
   }
 
   draw() {
-    this.currentWallpaper().draw(480, 270)
-
-    canvas.setFont(fonts.body)
+    paint(this.context.settings.wallpaper, 480, 270)
 
     for (index = 0; index < this.icons.length(); index++) {
       icon = this.icons[index]
-      bounds = icon.bounds()
+
+      icon.drawGlyph(icon.x + (metrics.iconWidth - iconSize) / 2, icon.y)
+
+      // The label rides its own plate, the way Picotron's do. A wallpaper is
+      // whatever the machine's owner made it, so five pixel text cannot count
+      // on any particular thing being behind it.
+      chipFill = theme.scrim
+      chipText = theme.text
 
       if (index == this.selected) {
-        canvas.setColor(color.rgb(255, 255, 255, 0.18))
-        canvas.filledRectangle(bounds.x - 2, bounds.y - 2, bounds.w + 4, bounds.h + 4)
+        chipFill = theme.accent
+        chipText = theme.inverse
       }
 
-      glyph = icon.glyph
+      labelWidth = fonts.body.getWidth(icon.label)
 
-      glyph(icon.x + 9, icon.y)
-
-      canvas.setColor(color.rgb(0, 0, 0, 0.6))
-      canvas.print(icon.label, icon.x + 1, icon.y + 24 + 1)
-      canvas.setColor(theme.text)
-      canvas.print(icon.label, icon.x, icon.y + 24)
+      drawChip(icon.label, icon.x + (metrics.iconWidth - labelWidth) / 2, icon.y + 24, chipFill, chipText)
     }
   }
 }

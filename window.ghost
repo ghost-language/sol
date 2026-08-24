@@ -41,6 +41,13 @@ class Window {
       this.resizable = app.resizable
     }
 
+    // Minimised windows keep their place in the stack and their app running -
+    // the dock is the only thing that can see them - and a zoomed one keeps the
+    // bounds it had before, to go back to.
+    this.minimized = false
+    this.zoomed = false
+    this.restoreBounds = null
+
     this.pointer = deadPointer()
   }
 
@@ -52,14 +59,60 @@ class Window {
     return metrics.titlebarHeight + this.h
   }
 
-  closeButtonBounds() {
-    size = metrics.titlebarHeight - 3
+  // The three controls sit at the left end of the titlebar, in the order macOS
+  // puts them: close, minimise, zoom. The dots are five pixels across and the
+  // squares you can hit are seven, because five pixels of target is a lot to
+  // ask of a pointer.
+  controlBounds(index) {
+    return { x: this.x + 4 + index * 8, y: this.y + 3, w: 7, h: 7 }
+  }
 
-    return { x: this.x + this.w - size - 2, y: this.y + 2, w: size, h: size }
+  controlAt(px, py) {
+    for (index = 0; index < 3; index++) {
+      bounds = this.controlBounds(index)
+
+      if (hitTest(px, py, bounds.x, bounds.y, bounds.w, bounds.h)) {
+        return index
+      }
+    }
+
+    return -1
+  }
+
+  controlsWidth() {
+    return 28
   }
 
   resizeGripBounds() {
     return { x: this.x + this.w - 6, y: this.contentY() + this.h - 6, w: 6, h: 6 }
+  }
+
+  // zoom fills the desktop between the menu bar and the dock, and remembers
+  // enough to put the window back where it was.
+  toggleZoom() {
+    if (!this.resizable) {
+      return null
+    }
+
+    if (this.zoomed) {
+      bounds = this.restoreBounds
+
+      this.x = bounds.x
+      this.y = bounds.y
+      this.w = bounds.w
+      this.h = bounds.h
+      this.zoomed = false
+
+      return null
+    }
+
+    this.restoreBounds = { x: this.x, y: this.y, w: this.w, h: this.h }
+
+    this.x = 0
+    this.y = desktopTop()
+    this.w = 480
+    this.h = desktopBottom() - desktopTop() - metrics.titlebarHeight
+    this.zoomed = true
   }
 }
 
@@ -80,11 +133,11 @@ class WindowManager {
 
   open(app, x = null, y = null) {
     if (x == null) {
-      x = 54 + (this.windows.length() % 6) * 16
+      x = 56 + (this.windows.length() % 6) * 18
     }
 
     if (y == null) {
-      y = 20 + (this.windows.length() % 6) * 14
+      y = desktopTop() + 8 + (this.windows.length() % 6) * 16
     }
 
     win = new Window(app, x, y)
@@ -100,12 +153,27 @@ class WindowManager {
     return this.windows.length() == 0
   }
 
+  // The focused window is the topmost one that is actually on screen - a
+  // minimised window keeps its place in the stack, but nothing about it is
+  // clickable until the dock puts it back.
   focused() {
-    if (this.isEmpty()) {
-      return null
+    for (index = this.windows.length() - 1; index >= 0; index--) {
+      if (!this.windows[index].minimized) {
+        return this.windows[index]
+      }
     }
 
-    return this.windows[this.windows.length() - 1]
+    return null
+  }
+
+  minimize(target) {
+    target.minimized = true
+  }
+
+  restore(target) {
+    target.minimized = false
+
+    this.bringToFront(target)
   }
 
   bringToFront(target) {
@@ -141,6 +209,10 @@ class WindowManager {
     for (index = this.windows.length() - 1; index >= 0; index--) {
       win = this.windows[index]
 
+      if (win.minimized) {
+        continue
+      }
+
       if (hitTest(px, py, win.x, win.y, win.w, win.totalHeight())) {
         return win
       }
@@ -162,10 +234,22 @@ class WindowManager {
 
     this.bringToFront(target)
 
-    closeBounds = target.closeButtonBounds()
+    control = target.controlAt(mx, my)
 
-    if (hitTest(mx, my, closeBounds.x, closeBounds.y, closeBounds.w, closeBounds.h)) {
+    if (control == 0) {
       this.pendingClose = target
+
+      return true
+    }
+
+    if (control == 1) {
+      this.minimize(target)
+
+      return true
+    }
+
+    if (control == 2) {
+      target.toggleZoom()
 
       return true
     }
@@ -196,17 +280,17 @@ class WindowManager {
 
     minX = -(target.w - 24)
     maxX = 480 - 24
-    maxY = 270 - metrics.taskbarHeight - metrics.titlebarHeight
+    maxY = desktopBottom() - metrics.titlebarHeight
 
     target.x = math.max(minX, math.min(maxX, mx - this.dragOffsetX))
-    target.y = math.max(0, math.min(maxY, my - this.dragOffsetY))
+    target.y = math.max(desktopTop(), math.min(maxY, my - this.dragOffsetY))
   }
 
   applyResize(mx, my) {
     target = this.resizeTarget
 
     maxW = 480 - target.x
-    maxH = 270 - metrics.taskbarHeight - target.contentY()
+    maxH = desktopBottom() - target.contentY()
 
     target.w = math.max(target.minWidth, math.min(maxW, mx - target.x))
     target.h = math.max(target.minHeight, math.min(maxH, my - target.contentY()))
@@ -261,7 +345,7 @@ class WindowManager {
       win = this.windows[index]
       pointer = deadPointer()
 
-      if (win == top) {
+      if (win == top and !win.minimized) {
         localX = mx - win.x
         localY = my - win.contentY()
         inside = localX >= 0 and localX < win.w and localY >= 0 and localY < win.h
@@ -303,38 +387,54 @@ class WindowManager {
     top = this.focused()
 
     for (index = 0; index < this.windows.length(); index++) {
-      this.drawWindow(this.windows[index], this.windows[index] == top)
+      if (!this.windows[index].minimized) {
+        this.drawWindow(this.windows[index], this.windows[index] == top)
+      }
     }
   }
 
+  // A window wears its title the way a Mac does: the three controls at the left
+  // end of the bar, the title centred, and nothing else. The window's own menu
+  // is not here - it belongs to the menu bar at the top of the screen, which
+  // shows whichever window is focused.
   drawWindow(win, active) {
     canvas.setLineWidth(1)
 
-    titleColor = theme.titlebar
+    barColor = theme.titlebar
+    labelColor = theme.textDim
 
     if (active) {
-      titleColor = theme.titlebarActive
+      barColor = theme.titlebarActive
+      labelColor = theme.inverse
     }
 
     drawPanel(win.x, win.y, win.w, win.totalHeight())
 
-    canvas.setColor(titleColor)
-    canvas.filledRectangle(win.x + 1, win.y + 1, win.w - 2, metrics.titlebarHeight - 1)
+    // The titlebar is rounded along its top edge and square along the bottom,
+    // where the content meets it.
+    canvas.setColor(barColor)
+    canvas.filledRectangle(win.x + metrics.corner, win.y + 1, win.w - metrics.corner * 2, 1)
+    canvas.filledRectangle(win.x + 1, win.y + 2, win.w - 2, metrics.titlebarHeight - 2)
 
-    canvas.setFont(fonts.body)
-    canvas.setColor(theme.text)
+    this.drawControls(win, active)
 
-    label = truncate(fonts.body, win.app.title, win.w - metrics.titlebarHeight - 8)
+    canvas.setColor(labelColor)
 
-    canvas.print(label, win.x + 3, win.y + 2)
+    label = truncate(fonts.body, win.app.title, win.w - win.controlsWidth() * 2 - 8)
 
-    this.drawCloseButton(win)
+    fonts.body.printCentered(label, win.x + win.w / 2, win.y + 3)
 
     canvas.push()
     canvas.translate(win.x, win.contentY())
     canvas.setScissor(0, 0, win.w, win.h)
+
+    // The content is filled with its own rounded bottom, so the two corners at
+    // the foot of the window show the desktop rather than the panel.
     canvas.setColor(theme.panel)
-    canvas.filledRectangle(0, 0, win.w, win.h)
+    canvas.filledRectangle(0, 0, win.w, win.h - metrics.corner)
+    canvas.filledRectangle(metrics.corner, win.h - metrics.corner, win.w - metrics.corner * 2, metrics.corner)
+    canvas.filledRectangle(1, win.h - metrics.corner, metrics.corner - 1, metrics.corner - 1)
+    canvas.filledRectangle(win.w - metrics.corner, win.h - metrics.corner, metrics.corner - 1, metrics.corner - 1)
 
     win.app.draw(win.w, win.h, win.pointer)
 
@@ -346,29 +446,38 @@ class WindowManager {
     }
   }
 
-  drawCloseButton(win) {
-    bounds = win.closeButtonBounds()
-    hovered = hitTest(mouse.x, mouse.y, bounds.x, bounds.y, bounds.w, bounds.h)
+  // Three dots: red, amber, green while the window is focused, and all three
+  // grey while it is not - which is also how a Mac leaves them until you reach
+  // for one. Zoom stays grey on a window that cannot be resized, because on
+  // that window it does nothing.
+  drawControls(win, active) {
+    tints = [theme.close, theme.minimize, theme.zoom]
 
-    fill = theme.panelDark
+    for (index = 0; index < 3; index++) {
+      bounds = win.controlBounds(index)
+      tint = theme.idleControl
 
-    if (hovered) {
-      fill = theme.ember
+      if (active and (index < 2 or win.resizable)) {
+        tint = tints[index]
+      }
+
+      canvas.setColor(tint)
+
+      filledRoundedRectangle(bounds.x + 1, bounds.y + 1, 5, 5, 1)
     }
-
-    canvas.setColor(fill)
-    canvas.filledRectangle(bounds.x, bounds.y, bounds.w, bounds.h)
-
-    canvas.setColor(theme.text)
-    canvas.line(bounds.x + 2, bounds.y + 2, bounds.x + bounds.w - 2, bounds.y + bounds.h - 2)
-    canvas.line(bounds.x + bounds.w - 2, bounds.y + 2, bounds.x + 2, bounds.y + bounds.h - 2)
   }
 
+  // The resize grip is a corner of loose pixels rather than two hairlines:
+  // diagonal lines are the one primitive that cannot land on whole pixels at
+  // every scale, and a stipple reads as "drag me" just as well.
   drawGrip(win) {
     bounds = win.resizeGripBounds()
 
     canvas.setColor(theme.borderLight)
-    canvas.line(bounds.x, bounds.y + bounds.h, bounds.x + bounds.w, bounds.y)
-    canvas.line(bounds.x + 2, bounds.y + bounds.h, bounds.x + bounds.w, bounds.y + 2)
+
+    for (step = 0; step < 3; step++) {
+      canvas.filledRectangle(bounds.x + bounds.w - 2 - step * 2, bounds.y + bounds.h - 2, 1, 1)
+      canvas.filledRectangle(bounds.x + bounds.w - 2, bounds.y + bounds.h - 2 - step * 2, 1, 1)
+    }
   }
 }

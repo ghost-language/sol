@@ -63,8 +63,6 @@ class Button {
       return null
     }
 
-    canvas.setFont(fonts.body)
-
     textColor = theme.text
 
     if (!this.enabled) {
@@ -75,7 +73,7 @@ class Button {
 
     textWidth = fonts.body.getWidth(this.label)
 
-    canvas.print(this.label, this.x + (this.w - textWidth) / 2, this.y + (this.h - fonts.body.getHeight()) / 2 + 1)
+    fonts.body.print(this.label, this.x + (this.w - textWidth) / 2, this.y + (this.h - fonts.body.getHeight()) / 2)
   }
 }
 
@@ -114,12 +112,11 @@ class ToggleButton extends Button {
       return null
     }
 
-    canvas.setFont(fonts.body)
-    canvas.setColor(theme.panelDark)
+    canvas.setColor(theme.inverse)
 
     textWidth = fonts.body.getWidth(this.label)
 
-    canvas.print(this.label, this.x + (this.w - textWidth) / 2, this.y + (this.h - fonts.body.getHeight()) / 2 + 1)
+    fonts.body.print(this.label, this.x + (this.w - textWidth) / 2, this.y + (this.h - fonts.body.getHeight()) / 2)
   }
 }
 
@@ -225,7 +222,6 @@ class ScrollList {
   draw(pointer) {
     drawInset(this.x, this.y, this.w, this.h)
     canvas.setScissor(this.x + 1, this.y + 1, this.w - 2, this.h - 2)
-    canvas.setFont(fonts.body)
 
     visible = this.visibleCount() + 1
     textHeight = fonts.body.getHeight()
@@ -241,7 +237,7 @@ class ScrollList {
       rowY = this.y + slot * this.rowHeight
 
       if (index == this.selected) {
-        canvas.setColor(theme.accentDim)
+        canvas.setColor(theme.accent)
         canvas.filledRectangle(this.x + 1, rowY, this.w - 2, this.rowHeight)
       } else if (hitTest(pointer.x, pointer.y, this.x + 1, rowY, this.w - 2, this.rowHeight)) {
         canvas.setColor(theme.panelLight)
@@ -255,8 +251,15 @@ class ScrollList {
         labelX = labelX + this.rowHeight
       }
 
-      canvas.setColor(theme.text)
-      canvas.print(item.label, labelX, rowY + (this.rowHeight - textHeight) / 2)
+      labelColor = theme.text
+
+      if (index == this.selected) {
+        labelColor = theme.inverse
+      }
+
+      canvas.setColor(labelColor)
+
+      fonts.body.print(item.label, labelX, rowY + (this.rowHeight - textHeight) / 2)
     }
 
     canvas.clearScissor()
@@ -355,9 +358,9 @@ class TextField {
   draw() {
     drawInset(this.x, this.y, this.w, this.h)
     canvas.setScissor(this.x + 2, this.y + 1, this.w - 4, this.h - 2)
-    canvas.setFont(fonts.body)
     canvas.setColor(theme.text)
-    canvas.print(this.text, this.x + 2, this.y + (this.h - fonts.body.getHeight()) / 2)
+
+    fonts.body.print(this.text, this.x + 2, this.y + (this.h - fonts.body.getHeight()) / 2)
 
     if (this.active) {
       remainder = this.blink - math.floor(this.blink)

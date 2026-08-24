@@ -1,0 +1,292 @@
+import "ghost:math"
+import "lumen:canvas"
+import "lumen:mouse"
+import * from 'theme'
+import { blit, iconImage } from 'assets'
+import FileManager from 'apps/filemanager'
+import TextEdit from 'apps/textedit'
+import SettingsApp from 'apps/settingsapp'
+import About from 'apps/about'
+
+// The dock is centred along the bottom of the screen and is how windows are
+// opened and got back: one slot per built-in app, with a dot under any that has
+// a window open, then - after a divider - a slot per minimised window. Clicking
+// an app raises its window if it has one and opens a new one if it does not,
+// which is close enough to what a Mac dock does that nobody has to think about
+// it.
+
+iconSize = 20
+slotWidth = 24
+dividerWidth = 5
+
+// launcher builds one dock slot. A closure made directly inside the list below
+// would be fine, but these are built by a function for the same reason
+// menubar.ghost's are: assignment in Ghost is scoped to the enclosing function,
+// so a closure built in a loop closes over the loop's own variable.
+function launcher(name, label, build) {
+  return { name: name, label: label, build: build }
+}
+
+class Dock {
+  constructor(context) {
+    this.context = context
+    this.hovered = -1
+
+    this.apps = [
+      launcher('files', 'Files', function() { return new FileManager(context) }),
+      launcher('textedit', 'Text Edit', function() { return new TextEdit(context, null) }),
+      launcher('settings', 'Settings', function() { return new SettingsApp(context) }),
+      launcher('about', 'About Sol', function() { return new About(context) })
+    ]
+  }
+
+  // minimizedWindows is rebuilt every frame rather than tracked: the window
+  // manager owns the list of windows, and a dock that keeps its own copy is a
+  // dock that eventually disagrees with it.
+  minimizedWindows() {
+    found = []
+    windows = this.context.wm.windows
+
+    for (index = 0; index < windows.length(); index++) {
+      if (windows[index].minimized) {
+        found.push(windows[index])
+      }
+    }
+
+    return found
+  }
+
+  slotCount() {
+    count = this.apps.length() + this.minimizedWindows().length()
+
+    return count
+  }
+
+  width() {
+    width = this.slotCount() * slotWidth + 6
+
+    if (this.minimizedWindows().length() > 0) {
+      width = width + dividerWidth
+    }
+
+    return width
+  }
+
+  bounds() {
+    width = this.width()
+
+    return {
+      x: math.floor((480 - width) / 2),
+      y: 270 - metrics.dockHeight - metrics.dockMargin,
+      w: width,
+      h: metrics.dockHeight
+    }
+  }
+
+  // slotBounds walks the row in drawing order: the apps, then the divider's gap
+  // if there is one, then the minimised windows.
+  slotBounds(index) {
+    bounds = this.bounds()
+    x = bounds.x + 3 + index * slotWidth
+
+    if (index >= this.apps.length()) {
+      x = x + dividerWidth
+    }
+
+    return { x: x, y: bounds.y + 2, w: iconSize, h: iconSize }
+  }
+
+  slotAt(px, py) {
+    for (index = 0; index < this.slotCount(); index++) {
+      slot = this.slotBounds(index)
+
+      if (hitTest(px, py, slot.x, slot.y - 2, slot.w, slot.h + 4)) {
+        return index
+      }
+    }
+
+    return -1
+  }
+
+  // windowsFor finds the open, un-minimised windows belonging to one app, which
+  // is what decides whether clicking its slot raises something or opens
+  // something new.
+  windowsFor(name) {
+    found = []
+    windows = this.context.wm.windows
+
+    for (index = 0; index < windows.length(); index++) {
+      win = windows[index]
+
+      if (win.app.icon == name and !win.minimized) {
+        found.push(win)
+      }
+    }
+
+    return found
+  }
+
+  minimizedFor(name) {
+    windows = this.minimizedWindows()
+
+    for (index = 0; index < windows.length(); index++) {
+      if (windows[index].app.icon == name) {
+        return windows[index]
+      }
+    }
+
+    return null
+  }
+
+  activate(index) {
+    if (index >= this.apps.length()) {
+      this.context.wm.restore(this.minimizedWindows()[index - this.apps.length()])
+
+      return null
+    }
+
+    app = this.apps[index]
+
+    // A minimised window comes back before a new one is made: clicking Files
+    // when Files is sitting in the dock should be how you get it back.
+    hidden = this.minimizedFor(app.name)
+
+    if (hidden != null) {
+      this.context.wm.restore(hidden)
+
+      return null
+    }
+
+    open = this.windowsFor(app.name)
+
+    if (open.length() > 0) {
+      this.context.wm.bringToFront(open[open.length() - 1])
+
+      return null
+    }
+
+    build = app.build
+
+    this.context.wm.open(build())
+  }
+
+  // update reports whether this frame's click belongs to the dock, the same way
+  // the menu bar does - the dock floats over the desktop, so it is asked before
+  // anything underneath it.
+  update(dt) {
+    this.hovered = this.slotAt(mouse.x, mouse.y)
+
+    if (!mouse.wasButtonPressed('left')) {
+      return false
+    }
+
+    if (this.hovered >= 0) {
+      this.activate(this.hovered)
+
+      return true
+    }
+
+    bounds = this.bounds()
+
+    return hitTest(mouse.x, mouse.y, bounds.x, bounds.y, bounds.w, bounds.h)
+  }
+
+  draw() {
+    bounds = this.bounds()
+
+    drawPanel(bounds.x, bounds.y, bounds.w, bounds.h)
+
+    hidden = this.minimizedWindows()
+
+    if (hidden.length() > 0) {
+      dividerX = this.slotBounds(this.apps.length()).x - 3
+
+      canvas.setColor(theme.border)
+      canvas.filledRectangle(dividerX, bounds.y + 4, 1, metrics.dockHeight - 8)
+    }
+
+    for (index = 0; index < this.apps.length(); index++) {
+      app = this.apps[index]
+
+      this.drawSlot(index, app.name, this.windowsFor(app.name).length() > 0)
+    }
+
+    for (index = 0; index < hidden.length(); index++) {
+      this.drawSlot(this.apps.length() + index, hidden[index].app.icon, false)
+    }
+
+    this.drawTooltip()
+  }
+
+  // A hovered slot gets a lit plate behind it and lifts by a pixel. That pixel
+  // is the whole animation budget of the dock, and it is enough.
+  drawSlot(index, name, running) {
+    slot = this.slotBounds(index)
+    lift = 0
+
+    if (index == this.hovered) {
+      lift = 1
+
+      canvas.setColor(theme.panelLight)
+
+      filledRoundedRectangle(slot.x - 2, slot.y - 2, iconSize + 4, iconSize + 4, metrics.corner)
+    }
+
+    image = iconImage(name)
+
+    if (image != null) {
+      blit(image, slot.x, slot.y - lift, 1)
+    }
+
+    if (running) {
+      canvas.setColor(theme.accent)
+      canvas.filledRectangle(slot.x + iconSize / 2 - 1, slot.y + iconSize + 1, 2, 2)
+    }
+  }
+
+  // The label sits above the dock rather than inside it, which is the only way
+  // a twenty pixel slot can be named without shrinking the icon.
+  drawTooltip() {
+    if (this.hovered < 0) {
+      return null
+    }
+
+    label = this.labelFor(this.hovered)
+
+    if (label == null) {
+      return null
+    }
+
+    slot = this.slotBounds(this.hovered)
+    width = fonts.body.getWidth(label)
+    x = math.floor(slot.x + iconSize / 2 - width / 2)
+    y = this.bounds().y - 12
+
+    canvas.setColor(theme.panelDark)
+
+    filledRoundedRectangle(x - 4, y - 2, width + 8, fonts.body.getHeight() + 5, metrics.corner)
+
+    canvas.setColor(theme.border)
+
+    roundedRectangle(x - 4, y - 2, width + 8, fonts.body.getHeight() + 5, metrics.corner)
+
+    canvas.setColor(theme.text)
+
+    fonts.body.print(label, x, y + 1)
+  }
+
+  labelFor(index) {
+    if (index < this.apps.length()) {
+      return this.apps[index].label
+    }
+
+    hidden = this.minimizedWindows()
+    slot = index - this.apps.length()
+
+    if (slot >= hidden.length()) {
+      return null
+    }
+
+    return hidden[slot].app.title
+  }
+}

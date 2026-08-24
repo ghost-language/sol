@@ -8,7 +8,7 @@ import "lumen:filesystem"
 
 class Settings {
   constructor() {
-    this.wallpaper = 'dawn'
+    this.wallpaper = 'dots'
     this.screensaver = 'orbit'
     this.idleMinutes = 2
 

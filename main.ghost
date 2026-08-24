@@ -3,9 +3,12 @@
 // pixel-perfect to whatever window it is given.
 //
 //   double-click a desktop icon      open an app
+//   a slot in the dock               open an app, or get a window back
 //   drag a titlebar                  move a window
 //   drag a window's bottom-right     resize it
-//   the Sol button                   open the start menu
+//   the three dots in a titlebar     close, minimise, zoom
+//   the mark in the menu bar         open the system menu
+//   the title in the menu bar        open the focused window's menu
 //   any input                        wakes the screensaver
 //
 // Everything drawn lives in the same 480x270 space window.ghost, desktop.ghost,
@@ -20,11 +23,13 @@ import "lumen:keyboard"
 import "lumen:mouse"
 import "lumen:window"
 import * from 'theme'
+import { blit, cursorImage } from 'assets'
 import 'vfs'
 import Settings from 'settings'
 import WindowManager from 'window'
 import Desktop from 'desktop'
-import Taskbar from 'taskbar'
+import Menubar from 'menubar'
+import Dock from 'dock'
 import * from 'screensavers'
 
 canvasWidth = 480
@@ -33,7 +38,8 @@ canvasHeight = 270
 game = {
   context: null,
   desktop: null,
-  taskbar: null,
+  menubar: null,
+  dock: null,
   idleSeconds: 0,
   lastMouseX: -1,
   lastMouseY: -1,
@@ -48,6 +54,11 @@ function load() {
   window.setMode(startingWidth(), startingHeight())
 
   filesystem.setIdentity('sol')
+
+  // Sol draws its own pointer, in its own 480x270 space, so the pointer is the
+  // same handful of pixels as everything else on screen and grows with the
+  // desktop rather than staying the size the host decided on.
+  mouse.hideCursor()
 
   // On, forever, from here - which app (if any) actually reads a character
   // is decided per-window by whether its focused app defines textinput(), not
@@ -67,7 +78,8 @@ function load() {
   }
 
   game.desktop = new Desktop(game.context)
-  game.taskbar = new Taskbar(game.context)
+  game.menubar = new Menubar(game.context)
+  game.dock = new Dock(game.context)
 
   game.lastMouseX = mouse.x
   game.lastMouseY = mouse.y
@@ -141,10 +153,20 @@ function update(dt) {
     return null
   }
 
-  taskbarConsumed = game.taskbar.update(dt)
-  windowConsumed = game.context.wm.update(dt, taskbarConsumed)
+  // The two pieces of chrome that float over everything get the click first,
+  // in the order they overlap: a menu hanging off the bar covers the dock, and
+  // both cover the windows and the desktop underneath them.
+  menubarConsumed = game.menubar.update(dt)
+  dockConsumed = false
 
-  game.desktop.update(dt, taskbarConsumed or windowConsumed)
+  if (!menubarConsumed) {
+    dockConsumed = game.dock.update(dt)
+  }
+
+  chromeConsumed = menubarConsumed or dockConsumed
+  windowConsumed = game.context.wm.update(dt, chromeConsumed)
+
+  game.desktop.update(dt, chromeConsumed or windowConsumed)
 }
 
 function updateScreensaver(dt) {
@@ -188,9 +210,33 @@ function draw() {
     return null
   }
 
+
   game.desktop.draw()
   game.context.wm.draw()
-  game.taskbar.draw()
+  game.dock.draw()
+  game.menubar.draw()
+
+  drawCursor()
+}
+
+// drawCursor puts the pointer on top of everything, including the screensaver -
+// the one thing on screen that has to be drawn last, every frame, whatever else
+// happened. A missing cursor.png leaves a small drawn arrow rather than nothing
+// at all; a desktop you cannot find the pointer on is not a desktop.
+function drawCursor() {
+  image = cursorImage()
+
+  if (image != null) {
+    blit(image, math.floor(mouse.x), math.floor(mouse.y), 1)
+
+    return null
+  }
+
+  canvas.setColor(theme.inverse)
+  canvas.filledRectangle(math.floor(mouse.x), math.floor(mouse.y), 4, 9)
+
+  canvas.setColor(theme.text)
+  canvas.filledRectangle(math.floor(mouse.x), math.floor(mouse.y), 3, 8)
 }
 
 // =============================================================================
