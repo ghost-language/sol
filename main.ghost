@@ -1,0 +1,221 @@
+// Sol - a fantasy workstation for Ghost + Lumen, in the spirit of Picotron:
+// a small windowed desktop, drawn at a fixed 480x270 (16:9) and scaled up
+// pixel-perfect to whatever window it is given.
+//
+//   double-click a desktop icon      open an app
+//   drag a titlebar                  move a window
+//   drag a window's bottom-right     resize it
+//   the Sol button                   open the start menu
+//   any input                        wakes the screensaver
+//
+// Everything drawn lives in the same 480x270 space window.ghost, desktop.ghost,
+// and every app assume - nothing here measures itself against the real
+// window, so the desktop cannot drift as the window is resized or the game
+// goes fullscreen.
+
+import "ghost:math"
+import "lumen:canvas"
+import "lumen:filesystem"
+import "lumen:keyboard"
+import "lumen:mouse"
+import "lumen:window"
+import * from 'theme'
+import 'vfs'
+import Settings from 'settings'
+import WindowManager from 'window'
+import Desktop from 'desktop'
+import Taskbar from 'taskbar'
+import * from 'screensavers'
+
+canvasWidth = 480
+canvasHeight = 270
+
+game = {
+  context: null,
+  desktop: null,
+  taskbar: null,
+  idleSeconds: 0,
+  lastMouseX: -1,
+  lastMouseY: -1,
+  screensaverOn: false,
+  screensaverInstance: null
+}
+
+function load() {
+  window.setTitle('Sol')
+  window.setLogicalSize(canvasWidth, canvasHeight)
+  window.setPixelPerfect(true)
+  window.setMode(startingWidth(), startingHeight())
+
+  filesystem.setIdentity('sol')
+
+  // On, forever, from here - which app (if any) actually reads a character
+  // is decided per-window by whether its focused app defines textinput(), not
+  // by toggling SDL's text input mode on and off as windows change.
+  keyboard.startTextInput()
+
+  loadFonts()
+  vfs.init()
+
+  settings = new Settings()
+
+  game.context = {
+    wm: new WindowManager(),
+    vfs: vfs,
+    settings: settings,
+    previewScreensaver: previewScreensaver
+  }
+
+  game.desktop = new Desktop(game.context)
+  game.taskbar = new Taskbar(game.context)
+
+  game.lastMouseX = mouse.x
+  game.lastMouseY = mouse.y
+
+  canvas.setBackgroundColor(theme.desktop)
+}
+
+// startingScale opens the window as large as it can be, in whole multiples of
+// the 480x270 canvas, without running off the display it starts on - the same
+// reasoning as the RPG example's own startingScale, just with a smaller base
+// canvas and so bigger multiples to try first.
+function startingScale() {
+  desktop = window.getDesktopDimensions()
+
+  if (desktop[0] >= canvasWidth * 3 + 100 and desktop[1] >= canvasHeight * 3 + 100) {
+    return 3
+  }
+
+  if (desktop[0] >= canvasWidth * 2 + 80 and desktop[1] >= canvasHeight * 2 + 80) {
+    return 2
+  }
+
+  return 1
+}
+
+function startingWidth() {
+  return math.floor(canvasWidth * startingScale())
+}
+
+function startingHeight() {
+  return math.floor(canvasHeight * startingScale())
+}
+
+// =============================================================================
+// Screensaver
+
+function activateScreensaver() {
+  chosen = find(game.context.settings.screensaver)
+
+  game.screensaverInstance = chosen.instance
+  game.screensaverInstance.reset()
+  game.screensaverOn = true
+}
+
+function previewScreensaver() {
+  activateScreensaver()
+}
+
+function deactivateScreensaver() {
+  game.screensaverOn = false
+  game.idleSeconds = 0
+}
+
+function idleThresholdSeconds() {
+  return game.context.settings.idleMinutes * 60
+}
+
+// =============================================================================
+// Frame
+
+function update(dt) {
+  if (game.screensaverOn) {
+    updateScreensaver(dt)
+
+    return null
+  }
+
+  updateIdle(dt)
+
+  if (game.screensaverOn) {
+    return null
+  }
+
+  taskbarConsumed = game.taskbar.update(dt)
+  windowConsumed = game.context.wm.update(dt, taskbarConsumed)
+
+  game.desktop.update(dt, taskbarConsumed or windowConsumed)
+}
+
+function updateScreensaver(dt) {
+  moved = mouse.x != game.lastMouseX or mouse.y != game.lastMouseY
+
+  game.lastMouseX = mouse.x
+  game.lastMouseY = mouse.y
+
+  if (moved or mouse.wasButtonPressed('left') or mouse.wasButtonPressed('right')) {
+    deactivateScreensaver()
+
+    return null
+  }
+
+  game.screensaverInstance.update(dt)
+}
+
+function updateIdle(dt) {
+  moved = mouse.x != game.lastMouseX or mouse.y != game.lastMouseY
+
+  game.lastMouseX = mouse.x
+  game.lastMouseY = mouse.y
+
+  if (moved or mouse.wasButtonPressed('left') or mouse.wasButtonPressed('right')) {
+    game.idleSeconds = 0
+
+    return null
+  }
+
+  game.idleSeconds = game.idleSeconds + dt
+
+  if (game.idleSeconds >= idleThresholdSeconds()) {
+    activateScreensaver()
+  }
+}
+
+function draw() {
+  if (game.screensaverOn) {
+    game.screensaverInstance.draw(canvasWidth, canvasHeight)
+
+    return null
+  }
+
+  game.desktop.draw()
+  game.context.wm.draw()
+  game.taskbar.draw()
+}
+
+// =============================================================================
+// Input
+
+function keypressed(key, isRepeat) {
+  game.idleSeconds = 0
+
+  if (game.screensaverOn) {
+    deactivateScreensaver()
+
+    return null
+  }
+
+  game.context.wm.keypressed(key)
+}
+
+function textinput(text) {
+  if (game.screensaverOn) {
+    return null
+  }
+
+  game.context.wm.textinput(text)
+}
+
+function wheelmoved(x, y) {
+  game.idleSeconds = 0
+}

@@ -1,0 +1,374 @@
+import "ghost:math"
+import "lumen:canvas"
+import "lumen:mouse"
+import * from 'theme'
+import { truncate } from 'widgets'
+
+// A Window is chrome wrapped around an app object. An app only has to
+// provide `title`, `width`, `height`, and `draw(w, h, pointer)`; everything
+// else - `update(dt, pointer)`, `keypressed(key)`, `textinput(text)`,
+// `onClose()` - is called if it is there and skipped if it is not, the same
+// way Lumen itself treats a game's callbacks as optional.
+//
+// `pointer` is the app's local, hit-tested mouse state: {x, y, down,
+// pressed, released, wheel, hover}, translated into the app's own 0,0
+// content coordinates. Only the focused window's content ever gets a live
+// one - every other window is handed a dead pointer (hover: false, nothing
+// down), so a click through to a background window focuses it rather than
+// also landing on whatever happened to be under the cursor.
+
+class Window {
+  constructor(app, x, y) {
+    this.app = app
+    this.x = x
+    this.y = y
+    this.w = app.width
+    this.h = app.height
+    this.minWidth = 90
+    this.minHeight = 54
+
+    if (app.minWidth != null) {
+      this.minWidth = app.minWidth
+    }
+
+    if (app.minHeight != null) {
+      this.minHeight = app.minHeight
+    }
+
+    this.resizable = true
+
+    if (app.resizable != null) {
+      this.resizable = app.resizable
+    }
+
+    this.pointer = deadPointer()
+  }
+
+  contentY() {
+    return this.y + metrics.titlebarHeight
+  }
+
+  totalHeight() {
+    return metrics.titlebarHeight + this.h
+  }
+
+  closeButtonBounds() {
+    size = metrics.titlebarHeight - 3
+
+    return { x: this.x + this.w - size - 2, y: this.y + 2, w: size, h: size }
+  }
+
+  resizeGripBounds() {
+    return { x: this.x + this.w - 6, y: this.contentY() + this.h - 6, w: 6, h: 6 }
+  }
+}
+
+function deadPointer() {
+  return { x: -1, y: -1, down: false, pressed: false, released: false, wheel: 0, hover: false }
+}
+
+class WindowManager {
+  constructor() {
+    this.windows = []
+    this.nextId = 1
+    this.dragTarget = null
+    this.dragOffsetX = 0
+    this.dragOffsetY = 0
+    this.resizeTarget = null
+    this.pendingClose = null
+  }
+
+  open(app, x = null, y = null) {
+    if (x == null) {
+      x = 54 + (this.windows.length() % 6) * 16
+    }
+
+    if (y == null) {
+      y = 20 + (this.windows.length() % 6) * 14
+    }
+
+    win = new Window(app, x, y)
+    win.id = this.nextId
+    this.nextId = this.nextId + 1
+
+    this.windows.push(win)
+
+    return win
+  }
+
+  isEmpty() {
+    return this.windows.length() == 0
+  }
+
+  focused() {
+    if (this.isEmpty()) {
+      return null
+    }
+
+    return this.windows[this.windows.length() - 1]
+  }
+
+  bringToFront(target) {
+    kept = []
+
+    for (index = 0; index < this.windows.length(); index++) {
+      if (this.windows[index] != target) {
+        kept.push(this.windows[index])
+      }
+    }
+
+    kept.push(target)
+    this.windows = kept
+  }
+
+  close(target) {
+    kept = []
+
+    for (index = 0; index < this.windows.length(); index++) {
+      if (this.windows[index] != target) {
+        kept.push(this.windows[index])
+      }
+    }
+
+    this.windows = kept
+
+    if (target.app.onClose != null) {
+      target.app.onClose()
+    }
+  }
+
+  windowAt(px, py) {
+    for (index = this.windows.length() - 1; index >= 0; index--) {
+      win = this.windows[index]
+
+      if (hitTest(px, py, win.x, win.y, win.w, win.totalHeight())) {
+        return win
+      }
+    }
+
+    return null
+  }
+
+  // handlePress reacts to a fresh left-click against window chrome - the
+  // titlebar, the close button, the resize grip - and reports whether it ate
+  // the click. A click it did not eat either landed in some window's content
+  // (routed separately, below) or on the desktop underneath everything.
+  handlePress(mx, my) {
+    target = this.windowAt(mx, my)
+
+    if (target == null) {
+      return false
+    }
+
+    this.bringToFront(target)
+
+    closeBounds = target.closeButtonBounds()
+
+    if (hitTest(mx, my, closeBounds.x, closeBounds.y, closeBounds.w, closeBounds.h)) {
+      this.pendingClose = target
+
+      return true
+    }
+
+    if (target.resizable) {
+      grip = target.resizeGripBounds()
+
+      if (hitTest(mx, my, grip.x, grip.y, grip.w, grip.h)) {
+        this.resizeTarget = target
+
+        return true
+      }
+    }
+
+    if (my < target.contentY()) {
+      this.dragTarget = target
+      this.dragOffsetX = mx - target.x
+      this.dragOffsetY = my - target.y
+
+      return true
+    }
+
+    return false
+  }
+
+  applyDrag(mx, my) {
+    target = this.dragTarget
+
+    minX = -(target.w - 24)
+    maxX = 480 - 24
+    maxY = 270 - metrics.taskbarHeight - metrics.titlebarHeight
+
+    target.x = math.max(minX, math.min(maxX, mx - this.dragOffsetX))
+    target.y = math.max(0, math.min(maxY, my - this.dragOffsetY))
+  }
+
+  applyResize(mx, my) {
+    target = this.resizeTarget
+
+    maxW = 480 - target.x
+    maxH = 270 - metrics.taskbarHeight - target.contentY()
+
+    target.w = math.max(target.minWidth, math.min(maxW, mx - target.x))
+    target.h = math.max(target.minHeight, math.min(maxH, my - target.contentY()))
+  }
+
+  // update reports whether this frame's click landed on some window at all,
+  // chrome or content - so the desktop underneath knows not to also react to
+  // it (an icon behind the window that was just clicked, say).
+  update(dt, suppressed = false) {
+    mx = mouse.x
+    my = mouse.y
+    pressed = mouse.wasButtonPressed('left') and !suppressed
+    released = mouse.wasButtonReleased('left')
+    down = mouse.isButtonDown('left')
+    wheel = mouse.wheel
+
+    chromeConsumed = false
+    windowClicked = false
+
+    if (pressed) {
+      windowClicked = this.windowAt(mx, my) != null
+      chromeConsumed = this.handlePress(mx, my)
+    }
+
+    if (released) {
+      this.dragTarget = null
+      this.resizeTarget = null
+    }
+
+    if (this.dragTarget != null and down) {
+      this.applyDrag(mx, my)
+    }
+
+    if (this.resizeTarget != null and down) {
+      this.applyResize(mx, my)
+    }
+
+    this.updateApps(dt, mx, my, pressed and !chromeConsumed, released, down, wheel)
+
+    if (this.pendingClose != null) {
+      this.close(this.pendingClose)
+      this.pendingClose = null
+    }
+
+    return windowClicked
+  }
+
+  updateApps(dt, mx, my, pressed, released, down, wheel) {
+    top = this.focused()
+
+    for (index = 0; index < this.windows.length(); index++) {
+      win = this.windows[index]
+      pointer = deadPointer()
+
+      if (win == top) {
+        localX = mx - win.x
+        localY = my - win.contentY()
+        inside = localX >= 0 and localX < win.w and localY >= 0 and localY < win.h
+
+        if (inside) {
+          pointer = { x: localX, y: localY, down: down, pressed: pressed, released: released, wheel: wheel, hover: true }
+        }
+      }
+
+      win.pointer = pointer
+
+      if (win.app.update != null) {
+        win.app.update(dt, pointer)
+      }
+    }
+  }
+
+  keypressed(key) {
+    top = this.focused()
+
+    if (top == null) {
+      return null
+    }
+
+    if (top.app.keypressed != null) {
+      top.app.keypressed(key)
+    }
+  }
+
+  textinput(text) {
+    top = this.focused()
+
+    if (top != null and top.app.textinput != null) {
+      top.app.textinput(text)
+    }
+  }
+
+  draw() {
+    top = this.focused()
+
+    for (index = 0; index < this.windows.length(); index++) {
+      this.drawWindow(this.windows[index], this.windows[index] == top)
+    }
+  }
+
+  drawWindow(win, active) {
+    canvas.setLineWidth(1)
+
+    titleColor = theme.titlebar
+
+    if (active) {
+      titleColor = theme.titlebarActive
+    }
+
+    drawPanel(win.x, win.y, win.w, win.totalHeight())
+
+    canvas.setColor(titleColor)
+    canvas.filledRectangle(win.x + 1, win.y + 1, win.w - 2, metrics.titlebarHeight - 1)
+
+    canvas.setFont(fonts.body)
+    canvas.setColor(theme.text)
+
+    label = truncate(fonts.body, win.app.title, win.w - metrics.titlebarHeight - 8)
+
+    canvas.print(label, win.x + 3, win.y + 2)
+
+    this.drawCloseButton(win)
+
+    canvas.push()
+    canvas.translate(win.x, win.contentY())
+    canvas.setScissor(0, 0, win.w, win.h)
+    canvas.setColor(theme.panel)
+    canvas.filledRectangle(0, 0, win.w, win.h)
+
+    win.app.draw(win.w, win.h, win.pointer)
+
+    canvas.clearScissor()
+    canvas.pop()
+
+    if (win.resizable) {
+      this.drawGrip(win)
+    }
+  }
+
+  drawCloseButton(win) {
+    bounds = win.closeButtonBounds()
+    hovered = hitTest(mouse.x, mouse.y, bounds.x, bounds.y, bounds.w, bounds.h)
+
+    fill = theme.panelDark
+
+    if (hovered) {
+      fill = theme.ember
+    }
+
+    canvas.setColor(fill)
+    canvas.filledRectangle(bounds.x, bounds.y, bounds.w, bounds.h)
+
+    canvas.setColor(theme.text)
+    canvas.line(bounds.x + 2, bounds.y + 2, bounds.x + bounds.w - 2, bounds.y + bounds.h - 2)
+    canvas.line(bounds.x + bounds.w - 2, bounds.y + 2, bounds.x + 2, bounds.y + bounds.h - 2)
+  }
+
+  drawGrip(win) {
+    bounds = win.resizeGripBounds()
+
+    canvas.setColor(theme.borderLight)
+    canvas.line(bounds.x, bounds.y + bounds.h, bounds.x + bounds.w, bounds.y)
+    canvas.line(bounds.x + 2, bounds.y + bounds.h, bounds.x + bounds.w, bounds.y + 2)
+  }
+}

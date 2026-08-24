@@ -1,0 +1,65 @@
+import "ghost:json"
+import "lumen:filesystem"
+
+// Sol's system preferences: which wallpaper and screensaver are active, and
+// how long the machine sits idle before the screensaver takes over. Saved
+// once, at the root of Sol's disk, next to the file manager's own folders
+// rather than inside them - it is not a document a user manages.
+
+class Settings {
+  constructor() {
+    this.wallpaper = 'dawn'
+    this.screensaver = 'orbit'
+    this.idleMinutes = 2
+
+    this.load()
+  }
+
+  load() {
+    content = filesystem.read('settings.json')
+
+    if (content == null) {
+      return null
+    }
+
+    data = json.decode(content)
+
+    if (data.wallpaper != null) {
+      this.wallpaper = data.wallpaper
+    }
+
+    if (data.screensaver != null) {
+      this.screensaver = data.screensaver
+    }
+
+    if (data.idleMinutes != null) {
+      this.idleMinutes = data.idleMinutes
+    }
+  }
+
+  save() {
+    filesystem.write('settings.json', json.encode({
+      wallpaper: this.wallpaper,
+      screensaver: this.screensaver,
+      idleMinutes: this.idleMinutes
+    }))
+  }
+
+  setWallpaper(id) {
+    this.wallpaper = id
+
+    this.save()
+  }
+
+  setScreensaver(id) {
+    this.screensaver = id
+
+    this.save()
+  }
+
+  setIdleMinutes(minutes) {
+    this.idleMinutes = minutes
+
+    this.save()
+  }
+}

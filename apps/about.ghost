@@ -1,0 +1,70 @@
+import "ghost:math"
+import "lumen:canvas"
+import "lumen:color"
+import * from 'theme'
+
+// About Sol - the simplest possible app, mostly here to prove that a window
+// needs nothing but a title, a size, and a draw() to exist.
+
+class About {
+  constructor(context) {
+    this.title = 'About Sol'
+    this.width = 150
+    this.height = 110
+    this.resizable = false
+    this.spin = 0
+  }
+
+  update(dt, pointer) {
+    this.spin = this.spin + dt * 0.6
+  }
+
+  draw(w, h, pointer) {
+    cx = w / 2
+    cy = 30
+
+    rays = 8
+
+    for (index = 0; index < rays; index++) {
+      angle = this.spin + index * (math.tau / rays)
+      x1 = cx + math.cos(angle) * 12
+      y1 = cy + math.sin(angle) * 12
+      x2 = cx + math.cos(angle) * 18
+      y2 = cy + math.sin(angle) * 18
+
+      canvas.setColor(theme.accent)
+      canvas.setLineWidth(2)
+      canvas.line(x1, y1, x2, y2)
+    }
+
+    canvas.setColor(theme.accent)
+    canvas.filledCircle(cx, cy, 11)
+    canvas.setColor(theme.ember)
+    canvas.circle(cx, cy, 11)
+
+    canvas.setFont(fonts.heading)
+    canvas.setColor(theme.text)
+
+    title = 'Sol'
+    titleWidth = fonts.heading.getWidth(title)
+
+    canvas.print(title, cx - titleWidth / 2, 52)
+
+    canvas.setFont(fonts.tiny)
+    canvas.setColor(theme.textDim)
+
+    lines = [
+      'A fantasy workstation',
+      'built with Ghost + Lumen',
+      '',
+      'ghostlang.org'
+    ]
+
+    for (index = 0; index < lines.length(); index++) {
+      line = lines[index]
+      lineWidth = fonts.tiny.getWidth(line)
+
+      canvas.print(line, cx - lineWidth / 2, 70 + index * 9)
+    }
+  }
+}

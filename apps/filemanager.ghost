@@ -1,0 +1,304 @@
+import "ghost:math"
+import "lumen:canvas"
+import "lumen:color"
+import * from 'theme'
+import { Button, ScrollList, TextField, row } from 'widgets'
+import TextEdit from 'apps/textedit'
+
+function drawRowFolderIcon(x, y) {
+  canvas.setColor(theme.accent)
+  canvas.filledRectangle(x, y + 2, 9, 6)
+  canvas.setColor(theme.accentDim)
+  canvas.filledRectangle(x, y + 1, 4, 2)
+}
+
+function drawRowFileIcon(x, y) {
+  canvas.setColor(theme.textDim)
+  canvas.filledRectangle(x + 1, y, 7, 9)
+  canvas.setColor(theme.panel)
+  canvas.filledRectangle(x + 2, y + 2, 5, 1)
+  canvas.filledRectangle(x + 2, y + 4, 5, 1)
+  canvas.filledRectangle(x + 2, y + 6, 3, 1)
+}
+
+function iconFor(kind) {
+  if (kind == 'folder') {
+    return drawRowFolderIcon
+  }
+
+  return drawRowFileIcon
+}
+
+function titleFor(path) {
+  if (path == '') {
+    return 'File Manager - Disk'
+  }
+
+  return 'File Manager - ' + path
+}
+
+function promptFor(mode) {
+  if (mode == 'new-folder') {
+    return 'New folder name:'
+  }
+
+  if (mode == 'new-file') {
+    return 'New file name:'
+  }
+
+  return 'Rename to:'
+}
+
+// FileManager browses Sol's own disk (vfs.ghost) - folders and files, never
+// the host machine's real filesystem. Creating, renaming, and deleting all
+// go through vfs so its per-folder manifest never drifts from what is
+// actually on disk.
+class FileManager {
+  constructor(context) {
+    this.context = context
+    this.title = 'File Manager'
+    this.width = 220
+    this.height = 150
+    this.minWidth = 170
+    this.minHeight = 110
+    this.path = ''
+    this.mode = 'browse'
+    this.message = ''
+    this.messageTimer = 0
+
+    self = this
+
+    this.upButton = new Button(2, 2, 20, 10, '^', function() { self.goUp() })
+    this.newFolderButton = new Button(24, 2, 44, 10, 'Folder', function() { self.beginCreate('new-folder') })
+    this.newFileButton = new Button(70, 2, 36, 10, 'File', function() { self.beginCreate('new-file') })
+    this.renameButton = new Button(108, 2, 46, 10, 'Rename', function() { self.beginRename() })
+    this.deleteButton = new Button(156, 2, 46, 10, 'Delete', function() { self.deleteSelected() })
+
+    this.list = new ScrollList(2, 15, 216, 122, 11)
+    this.list.onActivate = function(item) { self.activate(item) }
+
+    this.field = new TextField(2, 26, 216, 12)
+    this.field.onSubmit = function(text) { self.submitDialog(text) }
+
+    this.confirmButton = new Button(2, 42, 44, 11, 'OK', function() { self.submitDialog(self.field.text) })
+    this.cancelButton = new Button(50, 42, 50, 11, 'Cancel', function() { self.cancelDialog() })
+
+    this.refresh()
+  }
+
+  refresh() {
+    entries = this.context.vfs.list(this.path)
+    items = []
+
+    for (index = 0; index < entries.length(); index++) {
+      entry = entries[index]
+
+      items.push(row(entry.name, entry, iconFor(entry.kind)))
+    }
+
+    this.list.setItems(items)
+    this.title = titleFor(this.path)
+  }
+
+  selectedItem() {
+    if (this.list.selected < 0 or this.list.selected >= this.list.items.length()) {
+      return null
+    }
+
+    return this.list.items[this.list.selected]
+  }
+
+  goUp() {
+    if (this.path == '') {
+      return null
+    }
+
+    segments = this.path.split('/')
+    segments.pop()
+
+    this.path = segments.join('/')
+
+    this.refresh()
+  }
+
+  activate(item) {
+    entry = item.value
+
+    if (entry.kind == 'folder') {
+      this.path = entry.path
+
+      this.refresh()
+    } else {
+      this.context.wm.open(new TextEdit(this.context, entry.path))
+    }
+  }
+
+  beginCreate(mode) {
+    this.mode = mode
+    this.field.setText('')
+    this.field.focus()
+  }
+
+  beginRename() {
+    item = this.selectedItem()
+
+    if (item == null) {
+      this.showMessage('Nothing selected')
+
+      return null
+    }
+
+    if (item.value.kind != 'file') {
+      this.showMessage('Only files can be renamed yet')
+
+      return null
+    }
+
+    this.mode = 'rename'
+    this.field.setText(item.value.name)
+    this.field.focus()
+  }
+
+  cancelDialog() {
+    this.mode = 'browse'
+    this.field.blur()
+  }
+
+  submitDialog(text) {
+    self = this
+    trimmed = text.trim()
+
+    if (trimmed == '') {
+      this.cancelDialog()
+
+      return null
+    }
+
+    // A closure's `this` is its own, not the enclosing method's - see
+    // widgets.ghost's Button.update() for the same rule. `self`, an ordinary
+    // captured variable, is what actually reaches these.
+    if (this.mode == 'new-folder') {
+      this.createEntry(trimmed, function(name) { self.context.vfs.createFolder(self.path, name) })
+    } else if (this.mode == 'new-file') {
+      this.createEntry(trimmed, function(name) { self.context.vfs.createFile(self.path, name, '') })
+    } else if (this.mode == 'rename') {
+      item = this.selectedItem()
+
+      this.context.vfs.renameFile(this.path, item.value.name, trimmed)
+      this.refresh()
+    }
+
+    this.cancelDialog()
+  }
+
+  // createEntry is shared by new-folder and new-file: check the name is
+  // free, then hand off to whichever vfs call actually makes it.
+  createEntry(name, make) {
+    if (this.context.vfs.exists(this.path, name)) {
+      this.showMessage('Already exists')
+
+      return null
+    }
+
+    make(name)
+    this.refresh()
+  }
+
+  deleteSelected() {
+    item = this.selectedItem()
+
+    if (item == null) {
+      this.showMessage('Nothing selected')
+
+      return null
+    }
+
+    removed = this.context.vfs.remove(this.path, item.value.name, item.value.kind)
+
+    if (removed) {
+      this.refresh()
+    } else {
+      this.showMessage('Folder is not empty')
+    }
+  }
+
+  showMessage(text) {
+    this.message = text
+    this.messageTimer = 2
+  }
+
+  update(dt, pointer) {
+    if (this.messageTimer > 0) {
+      this.messageTimer = math.max(0, this.messageTimer - dt)
+    }
+
+    if (this.mode == 'browse') {
+      this.upButton.update(pointer)
+      this.newFolderButton.update(pointer)
+      this.newFileButton.update(pointer)
+      this.renameButton.update(pointer)
+      this.deleteButton.update(pointer)
+      this.list.update(pointer, dt)
+    } else {
+      this.field.update(pointer, dt)
+      this.confirmButton.update(pointer)
+      this.cancelButton.update(pointer)
+    }
+  }
+
+  keypressed(key) {
+    if (this.mode == 'browse') {
+      return null
+    }
+
+    this.field.keypressed(key)
+
+    if (key == 'Escape') {
+      this.cancelDialog()
+    }
+  }
+
+  textinput(chunk) {
+    if (this.mode != 'browse') {
+      this.field.textinput(chunk)
+    }
+  }
+
+  draw(w, h, pointer) {
+    this.list.w = w - 4
+    this.list.h = h - 17
+    this.field.w = w - 4
+
+    if (this.mode == 'browse') {
+      this.upButton.draw(pointer)
+      this.newFolderButton.draw(pointer)
+      this.newFileButton.draw(pointer)
+      this.renameButton.draw(pointer)
+      this.deleteButton.draw(pointer)
+      this.list.draw(pointer)
+    } else {
+      canvas.setFont(fonts.body)
+      canvas.setColor(theme.text)
+      canvas.print(promptFor(this.mode), 2, 2)
+
+      this.field.draw()
+      this.confirmButton.draw(pointer)
+      this.cancelButton.draw(pointer)
+    }
+
+    if (this.messageTimer > 0) {
+      this.drawMessage(w, h)
+    }
+  }
+
+  drawMessage(w, h) {
+    canvas.setFont(fonts.tiny)
+
+    barHeight = 11
+
+    canvas.setColor(color.rgb(20, 18, 34, 0.9))
+    canvas.filledRectangle(0, h - barHeight, w, barHeight)
+    canvas.setColor(theme.accent)
+    canvas.print(this.message, 3, h - barHeight + 2)
+  }
+}

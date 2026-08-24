@@ -1,0 +1,182 @@
+import "ghost:json"
+import "lumen:filesystem"
+
+// Sol's disk is its own save folder, not the host machine's real filesystem -
+// the same sandbox lumen:filesystem already gives every game, just used here
+// to hold a desktop's worth of folders and text files instead of a save
+// slot. lumen:filesystem can list names but not tell a file from a folder,
+// so every directory keeps a small manifest beside its entries recording
+// which is which; the file manager is the only thing that ever writes into
+// this disk, so the manifest never drifts from what is actually there.
+
+manifestName = '.sol-index.json'
+
+function join(path, name) {
+  if (path == '') {
+    return name
+  }
+
+  return path + '/' + name
+}
+
+function manifestPath(path) {
+  return join(path, manifestName)
+}
+
+function readManifest(path) {
+  content = filesystem.read(manifestPath(path))
+
+  if (content == null) {
+    return {}
+  }
+
+  return json.decode(content)
+}
+
+function writeManifest(path, entries) {
+  filesystem.write(manifestPath(path), json.encode(entries))
+}
+
+// entryOrder sorts folders ahead of files, then both alphabetically - the
+// arrangement of every desktop and file dialog since the idea existed.
+// list.sort()'s comparator is qsort-style: negative if `a` comes first, zero
+// if they tie, positive if `b` does.
+function entryOrder(a, b) {
+  if (a.kind != b.kind) {
+    if (a.kind == 'folder') {
+      return -1
+    }
+
+    return 1
+  }
+
+  left = a.name.toLowerCase()
+  right = b.name.toLowerCase()
+
+  if (left < right) {
+    return -1
+  }
+
+  if (left > right) {
+    return 1
+  }
+
+  return 0
+}
+
+function list(path) {
+  entries = readManifest(path)
+  names = entries.keys()
+  found = []
+
+  for (index = 0; index < names.length(); index++) {
+    name = names[index]
+    kind = entries.get(name)
+
+    if (kind == null) {
+      continue
+    }
+
+    found.push({ name: name, kind: kind, path: join(path, name) })
+  }
+
+  return found.sort(entryOrder)
+}
+
+function exists(path, name) {
+  entries = readManifest(path)
+
+  return entries.get(name) != null
+}
+
+function createFolder(path, name) {
+  filesystem.createDirectory(join(path, name))
+
+  entries = readManifest(path)
+  entries.set(name, 'folder')
+  writeManifest(path, entries)
+}
+
+function createFile(path, name, content) {
+  filesystem.write(join(path, name), content)
+
+  entries = readManifest(path)
+  entries.set(name, 'file')
+  writeManifest(path, entries)
+}
+
+function readFile(path) {
+  content = filesystem.read(path)
+
+  if (content == null) {
+    return ''
+  }
+
+  return content
+}
+
+function writeFile(path, content) {
+  filesystem.write(path, content)
+}
+
+// isEmpty reports whether a folder has no live entries left in its manifest,
+// which is what remove() below uses to refuse deleting a folder with
+// something still in it rather than losing it silently.
+function isEmpty(path) {
+  return list(path).length() == 0
+}
+
+// remove deletes a file, or a folder that is already empty. It returns false
+// rather than raising when a folder still has something in it, since that is
+// an ordinary refusal an app should show a message for, not a crash.
+function remove(path, name, kind) {
+  fullPath = join(path, name)
+
+  if (kind == 'folder') {
+    if (!isEmpty(fullPath)) {
+      return false
+    }
+
+    filesystem.remove(manifestPath(fullPath))
+  }
+
+  filesystem.remove(fullPath)
+
+  entries = readManifest(path)
+  entries.set(name, null)
+  writeManifest(path, entries)
+
+  return true
+}
+
+// rename only covers files - a folder's manifest entry lives inside the
+// folder it names, and lumen:filesystem has no move/rename to relocate that
+// along with everything beneath it.
+function renameFile(path, oldName, newName) {
+  content = readFile(join(path, oldName))
+
+  filesystem.remove(join(path, oldName))
+  filesystem.write(join(path, newName), content)
+
+  entries = readManifest(path)
+  entries.set(oldName, null)
+  entries.set(newName, 'file')
+  writeManifest(path, entries)
+}
+
+// init lays down the folders a fresh install of Sol starts with. It only
+// ever creates what is missing, so it is safe to call on every boot.
+function init() {
+  if (!exists('', 'Documents')) {
+    createFolder('', 'Documents')
+    createFile('Documents', 'welcome.txt', welcomeText())
+  }
+
+  if (!exists('', 'Pictures')) {
+    createFolder('', 'Pictures')
+  }
+}
+
+function welcomeText() {
+  return 'Welcome to Sol.\n\nThis is a text file, sitting in your Documents folder on Sol\'s own little disk.\n\nDouble-click a file in File Manager to open it here in Text Edit. Type something, then press the Save button - it writes straight back to this file.\n\nRight around the corner: Settings, for a different wallpaper or screensaver.\n'
+}

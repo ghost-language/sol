@@ -1,0 +1,187 @@
+import "ghost:math"
+import "lumen:canvas"
+import "lumen:color"
+import "lumen:mouse"
+import "lumen:timer"
+import * from 'theme'
+import * from 'wallpapers'
+import FileManager from 'apps/filemanager'
+import TextEdit from 'apps/textedit'
+import SettingsApp from 'apps/settingsapp'
+import About from 'apps/about'
+
+// The desktop is the wallpaper plus a column of icons that launch Sol's
+// built-in apps. `context` is the shared handle every app is built with:
+// { wm, vfs, settings } - the window manager to open windows in, the virtual
+// disk, and the saved preferences.
+
+function drawFolderGlyph(x, y) {
+  canvas.setColor(theme.accentDim)
+  canvas.filledRectangle(x, y + 3, 10, 4)
+  canvas.setColor(theme.accent)
+  canvas.filledRectangle(x, y + 6, 22, 14)
+  canvas.setColor(theme.panelDark)
+  canvas.rectangle(x, y + 6, 22, 14)
+}
+
+function drawDocumentGlyph(x, y) {
+  canvas.setColor(theme.text)
+  canvas.filledRectangle(x + 3, y + 1, 16, 20)
+  canvas.setColor(theme.panelDark)
+  canvas.filledRectangle(x + 5, y + 5, 12, 1)
+  canvas.filledRectangle(x + 5, y + 9, 12, 1)
+  canvas.filledRectangle(x + 5, y + 13, 8, 1)
+  canvas.setColor(theme.accent)
+  canvas.filledPolygon(x + 15, y + 1, x + 19, y + 1, x + 19, y + 5)
+}
+
+function drawGearGlyph(x, y) {
+  cx = x + 11
+  cy = y + 11
+  teeth = 8
+
+  canvas.setColor(theme.borderLight)
+
+  for (index = 0; index < teeth; index++) {
+    angle = index * (math.tau / teeth)
+    tx = cx + 9 * math.cos(angle)
+    ty = cy + 9 * math.sin(angle)
+
+    canvas.filledCircle(tx, ty, 3)
+  }
+
+  canvas.filledCircle(cx, cy, 9)
+  canvas.setColor(theme.panelDark)
+  canvas.filledCircle(cx, cy, 4)
+}
+
+function drawInfoGlyph(x, y) {
+  cx = x + 11
+  cy = y + 11
+
+  canvas.setColor(theme.accent)
+  canvas.filledCircle(cx, cy, 10)
+  canvas.setColor(theme.panelDark)
+  canvas.filledRectangle(cx - 1, cy - 5, 2, 2)
+  canvas.filledRectangle(cx - 1, cy - 1, 2, 7)
+}
+
+class DesktopIcon {
+  constructor(x, y, label, glyph, action) {
+    this.x = x
+    this.y = y
+    this.label = label
+    this.glyph = glyph
+    this.action = action
+  }
+
+  bounds() {
+    return { x: this.x, y: this.y, w: metrics.iconWidth, h: metrics.iconHeight }
+  }
+}
+
+class Desktop {
+  constructor(context) {
+    this.context = context
+    this.icons = this.buildIcons()
+    this.selected = -1
+    this.lastClickIndex = -1
+    this.lastClickTime = -1000
+  }
+
+  buildIcons() {
+    context = this.context
+
+    return [
+      new DesktopIcon(8, 8, 'Files', drawFolderGlyph, function() {
+        context.wm.open(new FileManager(context))
+      }),
+      new DesktopIcon(8, 8 + metrics.iconHeight, 'Text Edit', drawDocumentGlyph, function() {
+        context.wm.open(new TextEdit(context, null))
+      }),
+      new DesktopIcon(8, 8 + metrics.iconHeight * 2, 'Settings', drawGearGlyph, function() {
+        context.wm.open(new SettingsApp(context))
+      }),
+      new DesktopIcon(8, 8 + metrics.iconHeight * 3, 'About Sol', drawInfoGlyph, function() {
+        context.wm.open(new About(context))
+      })
+    ]
+  }
+
+  currentWallpaper() {
+    return find(this.context.settings.wallpaper)
+  }
+
+  iconAt(px, py) {
+    for (index = 0; index < this.icons.length(); index++) {
+      bounds = this.icons[index].bounds()
+
+      if (hitTest(px, py, bounds.x, bounds.y, bounds.w, bounds.h)) {
+        return index
+      }
+    }
+
+    return -1
+  }
+
+  // update only runs when nothing else claimed the click - the window
+  // manager already ate anything that landed on a window.
+  update(dt, claimed) {
+    if (claimed) {
+      return null
+    }
+
+    if (!mouse.wasButtonPressed('left')) {
+      return null
+    }
+
+    index = this.iconAt(mouse.x, mouse.y)
+
+    if (index < 0) {
+      this.selected = -1
+
+      return null
+    }
+
+    this.selected = index
+
+    doubled = index == this.lastClickIndex and timer.time - this.lastClickTime < 0.4
+
+    if (doubled) {
+      this.lastClickIndex = -1
+      this.lastClickTime = -1000
+
+      action = this.icons[index].action
+
+      action()
+    } else {
+      this.lastClickIndex = index
+      this.lastClickTime = timer.time
+    }
+  }
+
+  draw() {
+    this.currentWallpaper().draw(480, 270)
+
+    canvas.setFont(fonts.body)
+
+    for (index = 0; index < this.icons.length(); index++) {
+      icon = this.icons[index]
+      bounds = icon.bounds()
+
+      if (index == this.selected) {
+        canvas.setColor(color.rgb(255, 255, 255, 0.18))
+        canvas.filledRectangle(bounds.x - 2, bounds.y - 2, bounds.w + 4, bounds.h + 4)
+      }
+
+      glyph = icon.glyph
+
+      glyph(icon.x + 9, icon.y)
+
+      canvas.setColor(color.rgb(0, 0, 0, 0.6))
+      canvas.print(icon.label, icon.x + 1, icon.y + 24 + 1)
+      canvas.setColor(theme.text)
+      canvas.print(icon.label, icon.x, icon.y + 24)
+    }
+  }
+}

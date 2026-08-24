@@ -1,0 +1,156 @@
+import "ghost:math"
+import "lumen:canvas"
+import * from 'theme'
+import { Button, ToggleButton } from 'widgets'
+import * from 'wallpapers'
+import * from 'screensavers'
+
+idlePresets = [1, 2, 5, 10, 15]
+
+// A closure made directly inside a for-loop in Ghost closes over the loop's
+// own variable, not a fresh copy of it - assignment is scoped to the
+// enclosing function (see widgets.ghost's note, or Lumen's own CLAUDE.md),
+// so every button built that way would end up reacting to whichever option
+// the loop landed on last. Building each button inside its own function call
+// gives it parameters of its own to close over instead, one per option -
+// these two are only needed for that.
+function wallpaperToggle(context, option, x, y, w, h) {
+  return new ToggleButton(x, y, w, h, option.name,
+    function() { return context.settings.wallpaper == option.id },
+    function() { context.settings.setWallpaper(option.id) }
+  )
+}
+
+function screensaverToggle(context, option, x, y, w, h) {
+  return new ToggleButton(x, y, w, h, option.name,
+    function() { return context.settings.screensaver == option.id },
+    function() { context.settings.setScreensaver(option.id) }
+  )
+}
+
+class SettingsApp {
+  constructor(context) {
+    this.context = context
+    this.title = 'Settings'
+    this.width = 236
+    this.height = 168
+    this.minWidth = 200
+    this.minHeight = 130
+    this.tab = 'wallpaper'
+
+    self = this
+    this.tabButtons = [
+      new ToggleButton(4, 4, 64, 11, 'Wallpaper', function() { return self.tab == 'wallpaper' }, function() { self.tab = 'wallpaper' }),
+      new ToggleButton(70, 4, 64, 11, 'Screensaver', function() { return self.tab == 'screensaver' }, function() { self.tab = 'screensaver' })
+    ]
+
+    this.wallpaperButtons = this.buildWallpaperButtons()
+    this.screensaverButtons = this.buildScreensaverButtons()
+
+    this.minusButton = new Button(4, 138, 14, 11, '-', function() { self.adjustIdle(-1) })
+    this.plusButton = new Button(60, 138, 14, 11, '+', function() { self.adjustIdle(1) })
+    this.previewButton = new Button(150, 138, 60, 11, 'Preview now', function() { self.context.previewScreensaver() })
+  }
+
+  buildWallpaperButtons() {
+    context = this.context
+    buttons = []
+
+    for (index = 0; index < wallpapers.length(); index++) {
+      option = wallpapers[index]
+      row = math.floor(index / 2)
+      col = index % 2
+
+      buttons.push(wallpaperToggle(context, option, 4 + col * 114, 20 + row * 15, 110, 13))
+    }
+
+    return buttons
+  }
+
+  buildScreensaverButtons() {
+    context = this.context
+    buttons = []
+
+    for (index = 0; index < screensavers.length(); index++) {
+      option = screensavers[index]
+
+      buttons.push(screensaverToggle(context, option, 4, 20 + index * 15, 228, 13))
+    }
+
+    return buttons
+  }
+
+  adjustIdle(direction) {
+    settings = this.context.settings
+    currentIndex = 0
+
+    for (index = 0; index < idlePresets.length(); index++) {
+      if (idlePresets[index] == settings.idleMinutes) {
+        currentIndex = index
+      }
+    }
+
+    nextIndex = math.max(0, math.min(idlePresets.length() - 1, currentIndex + direction))
+
+    settings.setIdleMinutes(idlePresets[nextIndex])
+  }
+
+  activeButtons() {
+    if (this.tab == 'wallpaper') {
+      return this.wallpaperButtons
+    }
+
+    return this.screensaverButtons
+  }
+
+  update(dt, pointer) {
+    for (index = 0; index < this.tabButtons.length(); index++) {
+      this.tabButtons[index].update(pointer)
+    }
+
+    buttons = this.activeButtons()
+
+    for (index = 0; index < buttons.length(); index++) {
+      buttons[index].update(pointer)
+    }
+
+    if (this.tab == 'screensaver') {
+      this.minusButton.update(pointer)
+      this.plusButton.update(pointer)
+      this.previewButton.update(pointer)
+    }
+  }
+
+  draw(w, h, pointer) {
+    for (index = 0; index < this.tabButtons.length(); index++) {
+      this.tabButtons[index].draw(pointer)
+    }
+
+    buttons = this.activeButtons()
+
+    for (index = 0; index < buttons.length(); index++) {
+      buttons[index].draw(pointer)
+    }
+
+    if (this.tab == 'screensaver') {
+      this.drawIdleControls(pointer)
+    }
+  }
+
+  drawIdleControls(pointer) {
+    canvas.setFont(fonts.body)
+    canvas.setColor(theme.text)
+    canvas.print('Idle before screensaver:', 4, 124)
+
+    this.minusButton.draw(pointer)
+    this.plusButton.draw(pointer)
+
+    label = `${this.context.settings.idleMinutes} min`
+    labelWidth = fonts.body.getWidth(label)
+
+    canvas.setColor(theme.text)
+    canvas.print(label, 22 + (36 - labelWidth) / 2, 141)
+
+    this.previewButton.draw(pointer)
+  }
+}

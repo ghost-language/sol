@@ -1,0 +1,125 @@
+import "ghost:math"
+import "lumen:canvas"
+import * from 'theme'
+import { Button, allButLast } from 'widgets'
+
+// A plain text editor: load a file from Sol's disk (or start blank), type,
+// press Save to write it back. `path` is null for a new, unsaved document.
+
+class TextEdit {
+  constructor(context, path) {
+    this.context = context
+    this.path = path
+    this.width = 220
+    this.height = 150
+    this.minWidth = 150
+    this.minHeight = 90
+    this.dirty = false
+    this.status = ''
+    this.statusTimer = 0
+    this.text = ''
+
+    if (path != null) {
+      this.text = context.vfs.readFile(path)
+    }
+
+    this.title = this.titleFor(path)
+
+    self = this
+    this.saveButton = new Button(this.width - 38, 3, 34, 10, 'Save', function() {
+      self.save()
+    })
+  }
+
+  titleFor(path) {
+    if (path == null) {
+      return 'Text Edit - untitled'
+    }
+
+    return 'Text Edit - ' + baseName(path)
+  }
+
+  save() {
+    if (this.path == null) {
+      this.status = 'Nothing to save this as yet'
+      this.statusTimer = 2
+
+      return null
+    }
+
+    this.context.vfs.writeFile(this.path, this.text)
+    this.dirty = false
+    this.status = 'Saved'
+    this.statusTimer = 1.2
+  }
+
+  update(dt, pointer) {
+    this.saveButton.update(pointer)
+
+    if (this.statusTimer > 0) {
+      this.statusTimer = math.max(0, this.statusTimer - dt)
+    }
+  }
+
+  textinput(chunk) {
+    this.text = this.text + chunk
+    this.dirty = true
+  }
+
+  keypressed(key) {
+    if (key == 'Backspace') {
+      this.text = allButLast(this.text)
+      this.dirty = true
+    }
+
+    if (key == 'Return') {
+      this.text = this.text + '\n'
+      this.dirty = true
+    }
+
+    if (key == 'Tab') {
+      this.text = this.text + '  '
+      this.dirty = true
+    }
+  }
+
+  draw(w, h, pointer) {
+    this.saveButton.x = w - 38
+
+    this.saveButton.draw(pointer)
+
+    if (this.dirty) {
+      canvas.setColor(theme.ember)
+      canvas.filledCircle(w - 44, 8, 2)
+    }
+
+    if (this.statusTimer > 0) {
+      canvas.setFont(fonts.tiny)
+      canvas.setColor(theme.textDim)
+      canvas.print(this.status, 4, 4)
+    }
+
+    canvas.setScissor(0, 16, w, h - 16)
+    canvas.setFont(fonts.body)
+    canvas.setColor(theme.text)
+    this.drawText(4, 16)
+    canvas.clearScissor()
+  }
+
+  drawText(x, y) {
+    lines = this.text.split('\n')
+    lineHeight = fonts.body.getHeight() + 1
+
+    for (index = 0; index < lines.length(); index++) {
+      canvas.print(lines[index], x, y + index * lineHeight)
+    }
+  }
+}
+
+// baseName strips a vfs path down to its final segment - Sol's disk is flat
+// enough that this is the only piece of a path a title bar ever needs.
+function baseName(path) {
+  segments = path.split('/')
+
+  return segments[segments.length() - 1]
+}

@@ -1,0 +1,170 @@
+import "ghost:math"
+import "ghost:random"
+import "lumen:canvas"
+import "lumen:color"
+
+// Every wallpaper is drawn, not loaded - Sol ships as Ghost source and
+// nothing else, so a wallpaper is a function rather than an image asset.
+// `draw(w, h)` paints the full desktop area, before icons and the taskbar go
+// on top of it.
+
+function verticalGradient(x, y, w, h, top, bottom, steps) {
+  stepHeight = h / steps
+
+  for (index = 0; index < steps; index++) {
+    amount = index / (steps - 1)
+
+    r = math.lerp(top[0], bottom[0], amount)
+    g = math.lerp(top[1], bottom[1], amount)
+    b = math.lerp(top[2], bottom[2], amount)
+
+    canvas.setColor(color.rgb(r, g, b))
+    canvas.filledRectangle(x, y + math.floor(index * stepHeight), w, math.ceil(stepHeight) + 1)
+  }
+}
+
+function drawDawn(w, h) {
+  horizon = h * 0.68
+
+  verticalGradient(0, 0, w, horizon, [46, 28, 74], [255, 148, 84], 40)
+  verticalGradient(0, horizon, w, h - horizon, [201, 92, 70], [36, 18, 40], 16)
+
+  canvas.setColor(color.rgb(255, 214, 140))
+  canvas.filledCircle(w / 2, horizon - 4, 30)
+  canvas.setColor(color.rgb(255, 176, 72, 0.35))
+  canvas.filledCircle(w / 2, horizon - 4, 44)
+
+  canvas.setColor(color.rgb(20, 14, 28))
+  canvas.filledPolygon(
+    0, h, 0, horizon + 10,
+    70, horizon - 6, 140, horizon + 4,
+    210, horizon - 14, 260, horizon + 2,
+    260, h
+  )
+  canvas.filledPolygon(
+    260, h, 260, horizon + 6,
+    330, horizon - 10, 400, horizon + 2,
+    w, horizon - 8, w, h
+  )
+}
+
+function buildStars(count) {
+  random.seed(7301)
+
+  stars = []
+
+  for (index = 0; index < count; index++) {
+    stars.push({
+      x: random.random(480),
+      y: random.random(270),
+      size: random.random(1, 3),
+      glow: random.random() > 0.85
+    })
+  }
+
+  return stars
+}
+
+midnightStars = buildStars(140)
+
+function drawMidnight(w, h) {
+  verticalGradient(0, 0, w, h, [8, 8, 22], [26, 18, 46], 24)
+
+  for (index = 0; index < midnightStars.length(); index++) {
+    star = midnightStars[index]
+
+    if (star.glow) {
+      canvas.setColor(color.rgb(255, 226, 176, 0.5))
+    } else {
+      canvas.setColor(color.rgb(230, 230, 250, 0.8))
+    }
+
+    canvas.filledCircle(star.x, star.y, star.size)
+  }
+
+  canvas.setColor(color.rgb(226, 220, 200))
+  canvas.filledCircle(w * 0.78, h * 0.22, 16)
+  canvas.setColor(color.rgb(8, 8, 22, 0.5))
+  canvas.filledCircle(w * 0.78 - 6, h * 0.22 - 4, 15)
+}
+
+function drawGrid(w, h) {
+  verticalGradient(0, 0, w, h, [10, 9, 26], [30, 14, 46], 20)
+
+  horizon = h * 0.6
+  vanishX = w / 2
+
+  canvas.setColor(color.rgb(255, 108, 74, 0.7))
+  canvas.setLineWidth(1)
+  canvas.line(0, horizon, w, horizon)
+
+  spread = 12
+
+  for (index = -spread; index <= spread; index++) {
+    canvas.setColor(color.rgb(90, 220, 220, 0.35))
+    canvas.line(vanishX, horizon, vanishX + index * 40, h)
+  }
+
+  rows = 10
+
+  for (row = 1; row <= rows; row++) {
+    amount = row / rows
+    y = horizon + (h - horizon) * (amount * amount)
+
+    canvas.setColor(color.rgb(90, 220, 220, 0.35 * (1 - amount * 0.6)))
+    canvas.line(0, y, w, y)
+  }
+}
+
+function drawChecker(w, h) {
+  size = 18
+
+  canvas.setColor(color.rgb(32, 28, 46))
+  canvas.filledRectangle(0, 0, w, h)
+
+  canvas.setColor(color.rgb(40, 36, 58))
+
+  cols = math.ceil(w / size) + 1
+  rows = math.ceil(h / size) + 1
+
+  for (row = 0; row < rows; row++) {
+    for (col = 0; col < cols; col++) {
+      if ((row + col) % 2 == 0) {
+        canvas.filledRectangle(col * size, row * size, size, size)
+      }
+    }
+  }
+}
+
+function drawEmber(w, h) {
+  verticalGradient(0, 0, w, h, [42, 20, 30], [20, 12, 24], 18)
+
+  canvas.setColor(color.rgb(255, 108, 74, 0.12))
+
+  for (index = -6; index < 14; index++) {
+    canvas.filledPolygon(
+      index * 46, h,
+      index * 46 + 26, h,
+      index * 46 - 90, 0,
+      index * 46 - 116, 0
+    )
+  }
+}
+
+wallpapers = [
+  { id: 'dawn', name: 'Dawn', draw: drawDawn },
+  { id: 'midnight', name: 'Midnight', draw: drawMidnight },
+  { id: 'grid', name: 'Horizon Grid', draw: drawGrid },
+  { id: 'checker', name: 'Checker', draw: drawChecker },
+  { id: 'ember', name: 'Ember', draw: drawEmber }
+]
+
+function find(id) {
+  for (index = 0; index < wallpapers.length(); index++) {
+    if (wallpapers[index].id == id) {
+      return wallpapers[index]
+    }
+  }
+
+  return wallpapers[0]
+}

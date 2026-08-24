@@ -1,0 +1,213 @@
+import "ghost:math"
+import "ghost:random"
+import "lumen:canvas"
+import "lumen:color"
+import * from 'theme'
+
+// A screensaver is a small object with reset(), update(dt), and draw(w, h) -
+// reset() puts it back to a starting state each time it takes over the
+// screen, so the same instance is reused rather than rebuilt every time.
+
+class OrbitSaver {
+  constructor() {
+    this.reset()
+  }
+
+  reset() {
+    this.bodies = []
+
+    count = 7
+
+    for (index = 0; index < count; index++) {
+      this.bodies.push({
+        radius: 16 + index * 9,
+        speed: 0.5 + index * 0.1,
+        angle: random.random(0, math.tau),
+        size: 1 + index % 3
+      })
+    }
+  }
+
+  update(dt) {
+    for (index = 0; index < this.bodies.length(); index++) {
+      body = this.bodies[index]
+      body.angle = body.angle + body.speed * dt
+    }
+  }
+
+  draw(w, h) {
+    canvas.setColor(color.rgb(6, 5, 14))
+    canvas.filledRectangle(0, 0, w, h)
+
+    cx = w / 2
+    cy = h / 2
+
+    for (index = 0; index < this.bodies.length(); index++) {
+      body = this.bodies[index]
+
+      canvas.setColor(color.rgb(60, 56, 90, 0.5))
+      canvas.circle(cx, cy, body.radius, 48)
+    }
+
+    canvas.setColor(color.rgb(255, 214, 140))
+    canvas.filledCircle(cx, cy, 15)
+    canvas.setColor(color.rgb(255, 176, 72, 0.3))
+    canvas.filledCircle(cx, cy, 23)
+
+    for (index = 0; index < this.bodies.length(); index++) {
+      body = this.bodies[index]
+
+      x = cx + math.cos(body.angle) * body.radius
+      y = cy + math.sin(body.angle) * body.radius * 0.42
+
+      canvas.setColor(color.rgb(200, 208, 255))
+      canvas.filledCircle(x, y, body.size)
+    }
+  }
+}
+
+class StarfieldSaver {
+  constructor() {
+    this.reset()
+  }
+
+  reset() {
+    this.stars = []
+
+    for (index = 0; index < 90; index++) {
+      this.stars.push(this.spawn(true))
+    }
+  }
+
+  spawn(anywhere) {
+    z = random.random(0.2, 1)
+
+    if (anywhere) {
+      z = random.random(0.02, 1)
+    }
+
+    return { x: random.random(-1, 1), y: random.random(-1, 1), z: z }
+  }
+
+  update(dt) {
+    for (index = 0; index < this.stars.length(); index++) {
+      star = this.stars[index]
+      star.z = star.z - dt * 0.5
+
+      if (star.z <= 0.02) {
+        this.stars[index] = this.spawn(false)
+      }
+    }
+  }
+
+  draw(w, h) {
+    canvas.setColor(color.rgb(4, 4, 10))
+    canvas.filledRectangle(0, 0, w, h)
+
+    cx = w / 2
+    cy = h / 2
+
+    for (index = 0; index < this.stars.length(); index++) {
+      star = this.stars[index]
+      sx = cx + star.x / star.z * cx
+      sy = cy + star.y / star.z * cy
+
+      if (sx < 0 or sx > w or sy < 0 or sy > h) {
+        continue
+      }
+
+      brightness = math.clamp(1 - star.z, 0.2, 1)
+      size = math.max(1, 3 * (1 - star.z))
+
+      canvas.setColor(color.rgb(255, 255, 255, brightness))
+      canvas.filledCircle(sx, sy, size)
+    }
+  }
+}
+
+class BounceSaver {
+  constructor() {
+    this.reset()
+  }
+
+  reset() {
+    this.x = 40
+    this.y = 30
+    this.vx = 52
+    this.vy = 38
+    this.hue = 24
+    this.text = 'SOL'
+  }
+
+  update(dt) {
+    this.x = this.x + this.vx * dt
+    this.y = this.y + this.vy * dt
+
+    boxW = fonts.heading.getWidth(this.text) + 14
+    boxH = fonts.heading.getHeight() + 10
+    bounced = false
+
+    if (this.x <= 0) {
+      this.x = 0
+      this.vx = -this.vx
+      bounced = true
+    }
+
+    if (this.x + boxW >= 480) {
+      this.x = 480 - boxW
+      this.vx = -this.vx
+      bounced = true
+    }
+
+    if (this.y <= 0) {
+      this.y = 0
+      this.vy = -this.vy
+      bounced = true
+    }
+
+    if (this.y + boxH >= 270) {
+      this.y = 270 - boxH
+      this.vy = -this.vy
+      bounced = true
+    }
+
+    if (bounced) {
+      this.hue = this.hue + 47
+
+      if (this.hue >= 360) {
+        this.hue = this.hue - 360
+      }
+    }
+  }
+
+  draw(w, h) {
+    canvas.setColor(color.rgb(6, 5, 14))
+    canvas.filledRectangle(0, 0, w, h)
+
+    canvas.setFont(fonts.heading)
+
+    boxW = fonts.heading.getWidth(this.text) + 14
+    boxH = fonts.heading.getHeight() + 10
+    tint = color.hsl(this.hue, 0.68, 0.6)
+
+    canvas.setColor(tint)
+    canvas.rectangle(this.x, this.y, boxW, boxH)
+    canvas.print(this.text, this.x + 7, this.y + 5)
+  }
+}
+
+screensavers = [
+  { id: 'orbit', name: 'Orbit', instance: new OrbitSaver() },
+  { id: 'starfield', name: 'Starfield', instance: new StarfieldSaver() },
+  { id: 'bounce', name: 'Bounce', instance: new BounceSaver() }
+]
+
+function find(id) {
+  for (index = 0; index < screensavers.length(); index++) {
+    if (screensavers[index].id == id) {
+      return screensavers[index]
+    }
+  }
+
+  return screensavers[0]
+}

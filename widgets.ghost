@@ -1,0 +1,415 @@
+import "ghost:math"
+import "lumen:canvas"
+import "lumen:timer"
+import * from 'theme'
+
+// Small mouse-driven controls shared by every app: a clickable Button, a
+// scrollable row list (file manager, pickers), and a single-line TextField
+// for naming things. All three are driven the same way every frame -
+// `update(pointer, dt)` then `draw(pointer)` - with `pointer` the window's
+// local, hit-tested mouse state handed down by the window manager.
+
+class Button {
+  constructor(x, y, w, h, label, action) {
+    this.x = x
+    this.y = y
+    this.w = w
+    this.h = h
+    this.label = label
+    this.action = action
+    this.enabled = true
+  }
+
+  contains(px, py) {
+    return hitTest(px, py, this.x, this.y, this.w, this.h)
+  }
+
+  update(pointer) {
+    if (!this.enabled) {
+      return null
+    }
+
+    if (pointer.pressed and this.contains(pointer.x, pointer.y)) {
+      // A class instance's own dot-call syntax (`this.action(...)`) only
+      // resolves methods declared on the class itself, never a field set
+      // dynamically in the constructor - reading it into a plain variable
+      // first and calling that works everywhere a function value does.
+      action = this.action
+
+      if (action != null) {
+        action()
+      }
+    }
+  }
+
+  draw(pointer) {
+    hovered = this.contains(pointer.x, pointer.y)
+    fill = theme.panelLight
+
+    if (!this.enabled) {
+      fill = theme.panelDark
+    } else if (pointer.down and hovered) {
+      fill = theme.accentDim
+    } else if (hovered) {
+      fill = theme.borderLight
+    }
+
+    canvas.setColor(fill)
+    canvas.filledRectangle(this.x, this.y, this.w, this.h)
+    canvas.setColor(theme.border)
+    canvas.rectangle(this.x, this.y, this.w, this.h)
+
+    if (this.label == null) {
+      return null
+    }
+
+    canvas.setFont(fonts.body)
+
+    textColor = theme.text
+
+    if (!this.enabled) {
+      textColor = theme.textDim
+    }
+
+    canvas.setColor(textColor)
+
+    textWidth = fonts.body.getWidth(this.label)
+
+    canvas.print(this.label, this.x + (this.w - textWidth) / 2, this.y + (this.h - fonts.body.getHeight()) / 2 + 1)
+  }
+}
+
+// ToggleButton is a Button that stays highlighted while `isActive()` says so -
+// the settings app's wallpaper and screensaver pickers are both built from a
+// row of these.
+class ToggleButton extends Button {
+  constructor(x, y, w, h, label, isActive, action) {
+    super.constructor(x, y, w, h, label, action)
+
+    this.isActive = isActive
+  }
+
+  draw(pointer) {
+    isActive = this.isActive
+
+    if (!isActive()) {
+      super.draw(pointer)
+
+      return null
+    }
+
+    hovered = this.contains(pointer.x, pointer.y)
+    fill = theme.accent
+
+    if (pointer.down and hovered) {
+      fill = theme.ember
+    }
+
+    canvas.setColor(fill)
+    canvas.filledRectangle(this.x, this.y, this.w, this.h)
+    canvas.setColor(theme.border)
+    canvas.rectangle(this.x, this.y, this.w, this.h)
+
+    if (this.label == null) {
+      return null
+    }
+
+    canvas.setFont(fonts.body)
+    canvas.setColor(theme.panelDark)
+
+    textWidth = fonts.body.getWidth(this.label)
+
+    canvas.print(this.label, this.x + (this.w - textWidth) / 2, this.y + (this.h - fonts.body.getHeight()) / 2 + 1)
+  }
+}
+
+// row builds a ScrollList entry. `label` is what is drawn, `value` is what a
+// caller gets back from onSelect/onActivate, and `icon` is an optional
+// function(x, y) a list can be given to draw a glyph beside the label.
+function row(label, value, icon) {
+  return { label: label, value: value, icon: icon }
+}
+
+class ScrollList {
+  constructor(x, y, w, h, rowHeight) {
+    this.x = x
+    this.y = y
+    this.w = w
+    this.h = h
+    this.rowHeight = rowHeight
+    this.items = []
+    this.selected = -1
+    this.scroll = 0
+    this.lastClickTime = -1000
+    this.lastClickIndex = -1
+    this.onSelect = null
+    this.onActivate = null
+  }
+
+  setItems(items) {
+    this.items = items
+
+    if (this.selected >= items.length()) {
+      this.selected = -1
+    }
+
+    this.scroll = math.max(0, math.min(this.scroll, this.maxScroll()))
+  }
+
+  visibleCount() {
+    return math.floor(this.h / this.rowHeight)
+  }
+
+  maxScroll() {
+    return math.max(0, this.items.length() - this.visibleCount())
+  }
+
+  scrollBy(delta) {
+    this.scroll = math.max(0, math.min(this.maxScroll(), this.scroll + delta))
+  }
+
+  indexAt(px, py) {
+    if (!hitTest(px, py, this.x, this.y, this.w, this.h)) {
+      return -1
+    }
+
+    index = math.floor((py - this.y) / this.rowHeight) + this.scroll
+
+    if (index < 0 or index >= this.items.length()) {
+      return -1
+    }
+
+    return index
+  }
+
+  update(pointer, dt) {
+    if (pointer.wheel != 0 and hitTest(pointer.x, pointer.y, this.x, this.y, this.w, this.h)) {
+      this.scrollBy(-pointer.wheel)
+    }
+
+    if (!pointer.pressed) {
+      return null
+    }
+
+    index = this.indexAt(pointer.x, pointer.y)
+
+    if (index < 0) {
+      return null
+    }
+
+    this.selected = index
+
+    onSelect = this.onSelect
+
+    if (onSelect != null) {
+      onSelect(this.items[index], index)
+    }
+
+    doubled = index == this.lastClickIndex and timer.time - this.lastClickTime < 0.35
+
+    if (doubled) {
+      this.lastClickIndex = -1
+      this.lastClickTime = -1000
+
+      onActivate = this.onActivate
+
+      if (onActivate != null) {
+        onActivate(this.items[index], index)
+      }
+    } else {
+      this.lastClickIndex = index
+      this.lastClickTime = timer.time
+    }
+  }
+
+  draw(pointer) {
+    drawInset(this.x, this.y, this.w, this.h)
+    canvas.setScissor(this.x + 1, this.y + 1, this.w - 2, this.h - 2)
+    canvas.setFont(fonts.body)
+
+    visible = this.visibleCount() + 1
+    textHeight = fonts.body.getHeight()
+
+    for (slot = 0; slot < visible; slot++) {
+      index = slot + this.scroll
+
+      if (index >= this.items.length()) {
+        break
+      }
+
+      item = this.items[index]
+      rowY = this.y + slot * this.rowHeight
+
+      if (index == this.selected) {
+        canvas.setColor(theme.accentDim)
+        canvas.filledRectangle(this.x + 1, rowY, this.w - 2, this.rowHeight)
+      } else if (hitTest(pointer.x, pointer.y, this.x + 1, rowY, this.w - 2, this.rowHeight)) {
+        canvas.setColor(theme.panelLight)
+        canvas.filledRectangle(this.x + 1, rowY, this.w - 2, this.rowHeight)
+      }
+
+      labelX = this.x + 3
+
+      if (item.icon != null) {
+        item.icon(this.x + 2, rowY + 1)
+        labelX = labelX + this.rowHeight
+      }
+
+      canvas.setColor(theme.text)
+      canvas.print(item.label, labelX, rowY + (this.rowHeight - textHeight) / 2)
+    }
+
+    canvas.clearScissor()
+
+    this.drawScrollbar()
+  }
+
+  drawScrollbar() {
+    max = this.maxScroll()
+
+    if (max <= 0) {
+      return null
+    }
+
+    track = this.h
+    thumb = math.max(6, track * this.visibleCount() / this.items.length())
+    travel = track - thumb
+    thumbY = this.y + travel * (this.scroll / max)
+
+    canvas.setColor(theme.panelDark)
+    canvas.filledRectangle(this.x + this.w - 2, this.y, 2, this.h)
+
+    canvas.setColor(theme.borderLight)
+    canvas.filledRectangle(this.x + this.w - 2, thumbY, 2, thumb)
+  }
+}
+
+// TextField is a single-line editable field, used for naming a new file or
+// folder. Text input mode itself is turned on once, globally, at startup
+// (main.ghost) - what a field's focus controls is only which one, if any, of
+// possibly several in the same window actually reads the characters that
+// come through.
+class TextField {
+  constructor(x, y, w, h) {
+    this.x = x
+    this.y = y
+    this.w = w
+    this.h = h
+    this.text = ''
+    this.active = false
+    this.blink = 0
+    this.onSubmit = null
+  }
+
+  focus() {
+    this.active = true
+    this.blink = 0
+  }
+
+  blur() {
+    this.active = false
+  }
+
+  setText(value) {
+    this.text = value
+  }
+
+  update(pointer, dt) {
+    this.blink = this.blink + dt
+
+    if (!pointer.pressed) {
+      return null
+    }
+
+    if (hitTest(pointer.x, pointer.y, this.x, this.y, this.w, this.h)) {
+      this.focus()
+    } else {
+      this.blur()
+    }
+  }
+
+  textinput(chunk) {
+    if (!this.active) {
+      return null
+    }
+
+    this.text = this.text + chunk
+  }
+
+  keypressed(key) {
+    if (!this.active) {
+      return null
+    }
+
+    if (key == 'Backspace') {
+      this.text = allButLast(this.text)
+    }
+
+    onSubmit = this.onSubmit
+
+    if (key == 'Return' and onSubmit != null) {
+      onSubmit(this.text)
+    }
+  }
+
+  draw() {
+    drawInset(this.x, this.y, this.w, this.h)
+    canvas.setScissor(this.x + 2, this.y + 1, this.w - 4, this.h - 2)
+    canvas.setFont(fonts.body)
+    canvas.setColor(theme.text)
+    canvas.print(this.text, this.x + 2, this.y + (this.h - fonts.body.getHeight()) / 2)
+
+    if (this.active) {
+      remainder = this.blink - math.floor(this.blink)
+
+      if (remainder < 0.5) {
+        cursorX = this.x + 2 + fonts.body.getWidth(this.text) + 1
+
+        canvas.setColor(theme.accent)
+        canvas.filledRectangle(cursorX, this.y + 2, 1, this.h - 4)
+      }
+    }
+
+    canvas.clearScissor()
+  }
+}
+
+// allButLast drops the last character of a string. Ghost has no string
+// slicing, only indexing, so this rebuilds the string one character short.
+function allButLast(text) {
+  if (text.length() == 0) {
+    return text
+  }
+
+  result = ''
+
+  for (index = 0; index < text.length() - 1; index++) {
+    result = result + text[index]
+  }
+
+  return result
+}
+
+// truncate shortens text to fit `width` pixels in the given font, replacing
+// the tail with an ellipsis. Used anywhere a filename or title might overrun
+// its box - a titlebar, a list row, an icon label.
+function truncate(activeFont, text, width) {
+  if (activeFont.getWidth(text) <= width) {
+    return text
+  }
+
+  ellipsis = '...'
+  kept = ''
+
+  for (index = 0; index < text.length(); index++) {
+    candidate = kept + text[index]
+
+    if (activeFont.getWidth(candidate + ellipsis) > width) {
+      break
+    }
+
+    kept = candidate
+  }
+
+  return kept + ellipsis
+}
