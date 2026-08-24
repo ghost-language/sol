@@ -3,9 +3,12 @@
 // pixel-perfect to whatever window it is given.
 //
 //   double-click a desktop icon      open an app
+//   a slot in the dock               open an app, or get a window back
 //   drag a titlebar                  move a window
 //   drag a window's bottom-right     resize it
+//   the three dots in a titlebar     close, minimise, zoom
 //   the mark in the menu bar         open the system menu
+//   the title in the menu bar        open the focused window's menu
 //   any input                        wakes the screensaver
 //
 // Everything drawn lives in the same 480x270 space window.ghost, desktop.ghost,
@@ -26,6 +29,7 @@ import Settings from 'settings'
 import WindowManager from 'window'
 import Desktop from 'desktop'
 import Menubar from 'menubar'
+import Dock from 'dock'
 import * from 'screensavers'
 
 canvasWidth = 480
@@ -35,6 +39,7 @@ game = {
   context: null,
   desktop: null,
   menubar: null,
+  dock: null,
   idleSeconds: 0,
   lastMouseX: -1,
   lastMouseY: -1,
@@ -74,6 +79,7 @@ function load() {
 
   game.desktop = new Desktop(game.context)
   game.menubar = new Menubar(game.context)
+  game.dock = new Dock(game.context)
 
   game.lastMouseX = mouse.x
   game.lastMouseY = mouse.y
@@ -147,10 +153,20 @@ function update(dt) {
     return null
   }
 
+  // The two pieces of chrome that float over everything get the click first,
+  // in the order they overlap: a menu hanging off the bar covers the dock, and
+  // both cover the windows and the desktop underneath them.
   menubarConsumed = game.menubar.update(dt)
-  windowConsumed = game.context.wm.update(dt, menubarConsumed)
+  dockConsumed = false
 
-  game.desktop.update(dt, menubarConsumed or windowConsumed)
+  if (!menubarConsumed) {
+    dockConsumed = game.dock.update(dt)
+  }
+
+  chromeConsumed = menubarConsumed or dockConsumed
+  windowConsumed = game.context.wm.update(dt, chromeConsumed)
+
+  game.desktop.update(dt, chromeConsumed or windowConsumed)
 }
 
 function updateScreensaver(dt) {
@@ -197,6 +213,7 @@ function draw() {
 
   game.desktop.draw()
   game.context.wm.draw()
+  game.dock.draw()
   game.menubar.draw()
 
   drawCursor()

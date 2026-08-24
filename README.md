@@ -25,13 +25,22 @@ lumen .
 
 ## What's here
 
-- **Desktop** - a wallpaper, a column of icons, and a menu bar across the top
-  holding the system menu, a tab per open window, and the clock. Double-click an
-  icon, or pick an entry from the system menu, to open an app.
-- **Window manager** - draggable titlebars, a resize grip, click-to-focus,
-  and a close button. Every app is chrome wrapped around a plain object with
-  a `draw(w, h, pointer)`; see `window.ghost`'s comment for the rest of the
-  contract.
+- **Desktop** - a wallpaper, a column of icons, a menu bar along the top, and a
+  dock along the bottom. The arrangement is a Mac's: the mark at the left of the
+  bar opens the system menu, the focused window's name beside it opens that
+  window's menu, and the clock sits in the right corner. Opening and retrieving
+  windows is the dock's job.
+- **Dock** - centred at the foot of the screen, with a slot per built-in app and
+  a dot under any that has a window open. Clicking a slot raises that app's
+  window if it has one and opens a new one if it does not. Minimised windows
+  gather after a divider on the right; clicking one brings it back.
+- **Window manager** - draggable titlebars, a resize grip, click-to-focus, and
+  the three controls at the left end of every titlebar: close, minimise, zoom -
+  coloured while the window is focused, grey while it is not, with zoom greyed
+  on a window that cannot be resized. Zoom fills the desktop between the menu bar
+  and the dock, and remembers where the window was. Every app is chrome wrapped
+  around a plain object with a `draw(w, h, pointer)`; see `window.ghost`'s
+  comment for the rest of the contract.
 - **File Manager** - browses Sol's own disk (`vfs.ghost`), sandboxed to
   Lumen's save directory rather than the real filesystem. Create, rename, and
   delete folders and files.
@@ -65,12 +74,13 @@ to what Sol draws itself, so a half-filled `icons` folder is fine.
 ```
 main.ghost           entry point: window setup, the frame loop, idle/screensaver
 pixelfont.ghost       the bitmap font, drawn as rectangles
-theme.ghost           shared colors, metrics, fonts
+theme.ghost           shared colors, metrics, fonts, rounded-panel drawing
 assets.ghost          PNG loading, from Sol's disk or its own assets folder
 widgets.ghost         Button, ToggleButton, ScrollList, TextField
 window.ghost           Window chrome + WindowManager
 desktop.ghost           wallpaper + desktop icons
-menubar.ghost            system menu + open-window tabs + clock
+menubar.ghost            system menu + the focused window's menu + clock
+dock.ghost               app launchers + minimised windows
 wallpapers.ghost         flat colors, simple patterns, and PNG wallpapers
 screensavers.ghost        procedurally animated screensavers
 vfs.ghost                Sol's own sandboxed disk

@@ -24,6 +24,7 @@ class TextEdit {
     }
 
     this.title = this.titleFor(path)
+    this.icon = 'textedit'
 
     self = this
     this.saveButton = new Button(this.width - 38, 3, 34, 10, 'Save', function() {

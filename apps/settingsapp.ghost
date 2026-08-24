@@ -16,6 +16,7 @@ class SettingsApp {
   constructor(context) {
     this.context = context
     this.title = 'Settings'
+    this.icon = 'settings'
     this.width = 232
     this.height = 150
     this.minWidth = 200

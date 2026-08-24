@@ -9,6 +9,7 @@ import { blit, iconImage } from 'assets'
 class About {
   constructor(context) {
     this.title = 'About Sol'
+    this.icon = 'about'
     this.width = 152
     this.height = 122
     this.resizable = false

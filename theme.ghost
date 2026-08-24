@@ -35,16 +35,26 @@ theme = {
   signal: color.rgb(110, 214, 232),
   ember: color.rgb(236, 92, 138),
 
+  // The three window controls, in the order they sit in a titlebar. Grey is
+  // what all three wear while their window is not the focused one.
+  close: color.rgb(236, 92, 108),
+  minimize: color.rgb(240, 186, 92),
+  zoom: color.rgb(126, 214, 168),
+  idleControl: color.rgb(78, 78, 94),
+
   shadow: color.rgb(0, 0, 0, 0.5),
   scrim: color.rgb(7, 7, 11, 0.6)
 }
 
 metrics = {
   menubarHeight: 11,
-  titlebarHeight: 11,
+  titlebarHeight: 12,
+  dockHeight: 26,
+  dockMargin: 4,
   iconWidth: 46,
   iconHeight: 40,
-  rowHeight: 11
+  rowHeight: 11,
+  corner: 2
 }
 
 // fonts starts as a shell with its fields filled in by loadFonts() below,
@@ -63,24 +73,66 @@ function loadFonts() {
 }
 
 // desktopTop is the first row below the menu bar: where windows are allowed to
-// go, and where the desktop's own icons start.
+// go, and where the desktop's own icons start. desktopBottom is the matching
+// line above the dock.
 function desktopTop() {
   return metrics.menubarHeight
 }
 
+function desktopBottom() {
+  return 270 - metrics.dockHeight - metrics.dockMargin * 2
+}
+
+// A rounded corner at this size is two pixels taken off each end of the top and
+// bottom rows, which is all "rounded" can mean on a grid this small. Both
+// helpers below draw the shape as horizontal spans rather than as a path: a
+// span is a rectangle, and a rectangle is the one thing that survives being
+// scaled up by a whole number without softening.
+//
+// Nothing fills the corners in - the desktop behind simply shows through, the
+// way it does under Picotron's windows.
+function filledRoundedRectangle(x, y, w, h, radius) {
+  canvas.filledRectangle(x + radius, y, w - radius * 2, radius)
+  canvas.filledRectangle(x, y + radius, w, h - radius * 2)
+  canvas.filledRectangle(x + radius, y + h - radius, w - radius * 2, radius)
+
+  // The one pixel that turns a chamfer into a curve, on each corner.
+  if (radius > 1) {
+    canvas.filledRectangle(x + 1, y + 1, radius - 1, radius - 1)
+    canvas.filledRectangle(x + w - radius, y + 1, radius - 1, radius - 1)
+    canvas.filledRectangle(x + 1, y + h - radius, radius - 1, radius - 1)
+    canvas.filledRectangle(x + w - radius, y + h - radius, radius - 1, radius - 1)
+  }
+}
+
+function roundedRectangle(x, y, w, h, radius) {
+  canvas.filledRectangle(x + radius, y, w - radius * 2, 1)
+  canvas.filledRectangle(x + radius, y + h - 1, w - radius * 2, 1)
+  canvas.filledRectangle(x, y + radius, 1, h - radius * 2)
+  canvas.filledRectangle(x + w - 1, y + radius, 1, h - radius * 2)
+
+  canvas.filledRectangle(x + 1, y + 1, radius - 1, radius - 1)
+  canvas.filledRectangle(x + w - radius, y + 1, radius - 1, radius - 1)
+  canvas.filledRectangle(x + 1, y + h - radius, radius - 1, radius - 1)
+  canvas.filledRectangle(x + w - radius, y + h - radius, radius - 1, radius - 1)
+}
+
 // drawPanel is the shape every floating thing on the desktop shares - a menu,
-// a window, a dialog: a hard-edged panel with a solid shadow dropped one pixel
-// down and right. Nothing here is rounded or gradient-filled; a fantasy
+// a window, a dialog, the dock: rounded corners, a solid shadow two pixels down
+// and right, and a one pixel border. Nothing is gradient-filled; a fantasy
 // workstation should look like it was drawn on a grid, because it was.
 function drawPanel(x, y, w, h) {
   canvas.setColor(theme.shadow)
-  canvas.filledRectangle(x + 2, y + 2, w, h)
+
+  filledRoundedRectangle(x + 2, y + 2, w, h, metrics.corner)
 
   canvas.setColor(theme.panel)
-  canvas.filledRectangle(x, y, w, h)
+
+  filledRoundedRectangle(x, y, w, h, metrics.corner)
 
   canvas.setColor(theme.border)
-  canvas.rectangle(x, y, w, h)
+
+  roundedRectangle(x, y, w, h, metrics.corner)
 }
 
 // drawInset is drawPanel's opposite: a well sunk into a panel, for anything

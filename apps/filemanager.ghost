@@ -68,6 +68,7 @@ class FileManager {
   constructor(context) {
     this.context = context
     this.title = 'File Manager'
+    this.icon = 'files'
     this.width = 220
     this.height = 150
     this.minWidth = 170
