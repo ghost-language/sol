@@ -28,16 +28,25 @@ lumen .
 - **Window manager** - draggable titlebars, a resize grip, click-to-focus,
   and a close button. Every app is chrome wrapped around a plain object with
   a `draw(w, h, pointer)`; see `window.ghost`'s comment for the rest of the
-  contract.
+  contract. `apps/app.ghost`'s `App` is an optional base class every
+  built-in app extends, for the fields a window expects and a shared timed
+  status message.
 - **File Manager** - browses Sol's own disk (`vfs.ghost`), sandboxed to
   Lumen's save directory rather than the real filesystem. Create, rename, and
   delete folders and files.
 - **Text Edit** - opens a file from File Manager, or starts blank; edits and
   saves back to the same disk.
+- **Pixel Art** - a small sprite editor against a fixed ten-color palette.
+  Opens blank from the desktop or start menu; File Manager opens any file
+  ending in `.pixel` here instead of in Text Edit.
 - **Settings** - pick a wallpaper or a screensaver, and how long the machine
   sits idle before the screensaver takes over.
 - **About Sol** - the smallest possible app, mostly there to prove one only
   needs a title, a size, and a `draw()`.
+
+See `GUIDE.md` for a fuller tour of the codebase - the frame loop, the app
+contract, the two Ghost scoping gotchas below in more depth, and how to add
+a new app.
 
 ## Layout
 

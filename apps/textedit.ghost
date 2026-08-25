@@ -2,28 +2,23 @@ import "ghost:math"
 import "lumen:canvas"
 import * from 'theme'
 import { Button, allButLast } from 'widgets'
+import App from 'apps/app'
 
 // A plain text editor: load a file from Sol's disk (or start blank), type,
 // press Save to write it back. `path` is null for a new, unsaved document.
 
-class TextEdit {
+class TextEdit extends App {
   constructor(context, path) {
-    this.context = context
-    this.path = path
-    this.width = 220
-    this.height = 150
+    super.constructor(context, titleFor(path), 220, 150)
+
     this.minWidth = 150
     this.minHeight = 90
-    this.dirty = false
-    this.status = ''
-    this.statusTimer = 0
+    this.path = path
     this.text = ''
 
     if (path != null) {
       this.text = context.vfs.readFile(path)
     }
-
-    this.title = this.titleFor(path)
 
     self = this
     this.saveButton = new Button(this.width - 38, 3, 34, 10, 'Save', function() {
@@ -31,34 +26,22 @@ class TextEdit {
     })
   }
 
-  titleFor(path) {
-    if (path == null) {
-      return 'Text Edit - untitled'
-    }
-
-    return 'Text Edit - ' + baseName(path)
-  }
-
   save() {
     if (this.path == null) {
-      this.status = 'Nothing to save this as yet'
-      this.statusTimer = 2
+      this.showMessage('Nothing to save this as yet')
 
       return null
     }
 
     this.context.vfs.writeFile(this.path, this.text)
     this.dirty = false
-    this.status = 'Saved'
-    this.statusTimer = 1.2
+    this.showMessage('Saved', 1.2)
   }
 
   update(dt, pointer) {
-    this.saveButton.update(pointer)
+    super.update(dt, pointer)
 
-    if (this.statusTimer > 0) {
-      this.statusTimer = math.max(0, this.statusTimer - dt)
-    }
+    this.saveButton.update(pointer)
   }
 
   textinput(chunk) {
@@ -93,17 +76,13 @@ class TextEdit {
       canvas.filledCircle(w - 44, 8, 2)
     }
 
-    if (this.statusTimer > 0) {
-      canvas.setFont(fonts.tiny)
-      canvas.setColor(theme.textDim)
-      canvas.print(this.status, 4, 4)
-    }
-
     canvas.setScissor(0, 16, w, h - 16)
     canvas.setFont(fonts.body)
     canvas.setColor(theme.text)
     this.drawText(4, 16)
     canvas.clearScissor()
+
+    this.drawMessageBar(w, h)
   }
 
   drawText(x, y) {
@@ -122,4 +101,12 @@ function baseName(path) {
   segments = path.split('/')
 
   return segments[segments.length() - 1]
+}
+
+function titleFor(path) {
+  if (path == null) {
+    return 'Text Edit - untitled'
+  }
+
+  return 'Text Edit - ' + baseName(path)
 }

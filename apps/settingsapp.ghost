@@ -4,6 +4,7 @@ import * from 'theme'
 import { Button, ToggleButton } from 'widgets'
 import * from 'wallpapers'
 import * from 'screensavers'
+import App from 'apps/app'
 
 idlePresets = [1, 2, 5, 10, 15]
 
@@ -28,12 +29,10 @@ function screensaverToggle(context, option, x, y, w, h) {
   )
 }
 
-class SettingsApp {
+class SettingsApp extends App {
   constructor(context) {
-    this.context = context
-    this.title = 'Settings'
-    this.width = 236
-    this.height = 168
+    super.constructor(context, 'Settings', 236, 168)
+
     this.minWidth = 200
     this.minHeight = 130
     this.tab = 'wallpaper'
@@ -104,6 +103,8 @@ class SettingsApp {
   }
 
   update(dt, pointer) {
+    super.update(dt, pointer)
+
     for (index = 0; index < this.tabButtons.length(); index++) {
       this.tabButtons[index].update(pointer)
     }

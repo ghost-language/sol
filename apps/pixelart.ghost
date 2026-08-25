@@ -1,0 +1,245 @@
+import "ghost:math"
+import "ghost:json"
+import "lumen:canvas"
+import "lumen:color"
+import * from 'theme'
+import { Button, ToggleButton } from 'widgets'
+import App from 'apps/app'
+
+// Pixel Art: a small sprite editor against a fixed ten-color palette,
+// following the same open/edit/Save convention as Text Edit - `path` is
+// null for a fresh, unsaved sprite, and File Manager opens any file whose
+// name ends in `.pixel` here instead of in Text Edit (see
+// filemanager.ghost's activate()). A sprite is saved as JSON: its size and
+// a flat list of palette indices, -1 where nothing has been drawn.
+
+cols = 20
+rows = 20
+cell = 6
+
+palette = [
+  color.rgb(20, 18, 28),
+  color.rgb(245, 244, 250),
+  color.rgb(255, 107, 107),
+  color.rgb(255, 176, 72),
+  color.rgb(255, 224, 102),
+  color.rgb(123, 216, 143),
+  color.rgb(90, 196, 206),
+  color.rgb(94, 140, 255),
+  color.rgb(184, 122, 58),
+  color.rgb(94, 89, 138)
+]
+
+function blankPixels() {
+  pixels = []
+
+  for (index = 0; index < cols * rows; index++) {
+    pixels.push(-1)
+  }
+
+  return pixels
+}
+
+// baseName strips a vfs path down to its final segment, the same as Text
+// Edit's own copy of this - Sol's disk is flat enough that neither app
+// needs more of the path than that.
+function baseName(path) {
+  segments = path.split('/')
+
+  return segments[segments.length() - 1]
+}
+
+function titleFor(path) {
+  if (path == null) {
+    return 'Pixel Art - untitled'
+  }
+
+  return 'Pixel Art - ' + baseName(path)
+}
+
+class PixelArt extends App {
+  constructor(context, path) {
+    super.constructor(context, titleFor(path), 150, 158)
+
+    this.resizable = false
+    this.path = path
+    this.pixels = blankPixels()
+
+    if (path != null) {
+      this.load(context.vfs.readFile(path))
+    }
+
+    this.canvasX = 4
+    this.canvasY = 16
+    this.selected = 0
+    this.erasing = false
+
+    self = this
+    this.saveButton = new Button(4, 2, 34, 10, 'Save', function() { self.save() })
+    this.clearButton = new Button(40, 2, 34, 10, 'Clear', function() { self.clear() })
+    this.eraserButton = new ToggleButton(76, 2, 34, 10, 'Erase',
+      function() { return self.erasing },
+      function() { self.erasing = !self.erasing }
+    )
+  }
+
+  // load reads back a sprite saved by save() below. Content is '' for a
+  // file File Manager's "New File" just created, which is left as a blank
+  // grid rather than treated as a malformed save.
+  load(content) {
+    if (content == null or content.trim() == '') {
+      return null
+    }
+
+    data = json.decode(content)
+
+    if (data.pixels != null) {
+      this.pixels = data.pixels
+    }
+  }
+
+  save() {
+    if (this.path == null) {
+      this.showMessage('Nothing to save this as yet')
+
+      return null
+    }
+
+    this.context.vfs.writeFile(this.path, json.encode({ width: cols, height: rows, pixels: this.pixels }))
+    this.dirty = false
+    this.showMessage('Saved', 1.2)
+  }
+
+  clear() {
+    this.pixels = blankPixels()
+    this.dirty = true
+  }
+
+  paletteX() {
+    return this.canvasX + cols * cell + 6
+  }
+
+  swatchBounds(index) {
+    return { x: this.paletteX(), y: this.canvasY + index * 13, w: 12, h: 12 }
+  }
+
+  // cellAt turns a window-local point into a pixel index, or -1 outside the
+  // grid - the same convention ScrollList's indexAt uses for rows.
+  cellAt(px, py) {
+    localX = px - this.canvasX
+    localY = py - this.canvasY
+
+    if (localX < 0 or localY < 0 or localX >= cols * cell or localY >= rows * cell) {
+      return -1
+    }
+
+    col = math.floor(localX / cell)
+    row = math.floor(localY / cell)
+
+    return row * cols + col
+  }
+
+  paletteAt(px, py) {
+    for (index = 0; index < palette.length(); index++) {
+      bounds = this.swatchBounds(index)
+
+      if (hitTest(px, py, bounds.x, bounds.y, bounds.w, bounds.h)) {
+        return index
+      }
+    }
+
+    return -1
+  }
+
+  update(dt, pointer) {
+    super.update(dt, pointer)
+
+    this.saveButton.update(pointer)
+    this.clearButton.update(pointer)
+    this.eraserButton.update(pointer)
+
+    if (!pointer.down) {
+      return null
+    }
+
+    swatch = this.paletteAt(pointer.x, pointer.y)
+
+    if (swatch >= 0) {
+      if (pointer.pressed) {
+        this.selected = swatch
+        this.erasing = false
+      }
+
+      return null
+    }
+
+    index = this.cellAt(pointer.x, pointer.y)
+
+    if (index < 0) {
+      return null
+    }
+
+    if (this.erasing) {
+      this.pixels[index] = -1
+    } else {
+      this.pixels[index] = this.selected
+    }
+
+    this.dirty = true
+  }
+
+  draw(w, h, pointer) {
+    this.saveButton.draw(pointer)
+    this.clearButton.draw(pointer)
+    this.eraserButton.draw(pointer)
+
+    if (this.dirty) {
+      canvas.setColor(theme.ember)
+      canvas.filledCircle(w - 6, 7, 2)
+    }
+
+    this.drawGrid()
+    this.drawPalette()
+    this.drawMessageBar(w, h)
+  }
+
+  drawGrid() {
+    drawInset(this.canvasX - 1, this.canvasY - 1, cols * cell + 2, rows * cell + 2)
+
+    for (row = 0; row < rows; row++) {
+      for (col = 0; col < cols; col++) {
+        value = this.pixels[row * cols + col]
+        x = this.canvasX + col * cell
+        y = this.canvasY + row * cell
+
+        if (value < 0) {
+          if ((row + col) % 2 == 0) {
+            canvas.setColor(theme.panelDark)
+          } else {
+            canvas.setColor(theme.panel)
+          }
+        } else {
+          canvas.setColor(palette[value])
+        }
+
+        canvas.filledRectangle(x, y, cell, cell)
+      }
+    }
+  }
+
+  drawPalette() {
+    for (index = 0; index < palette.length(); index++) {
+      bounds = this.swatchBounds(index)
+
+      if (index == this.selected and !this.erasing) {
+        canvas.setColor(theme.text)
+        canvas.rectangle(bounds.x - 1, bounds.y - 1, bounds.w + 2, bounds.h + 2)
+      }
+
+      canvas.setColor(palette[index])
+      canvas.filledRectangle(bounds.x, bounds.y, bounds.w, bounds.h)
+      canvas.setColor(theme.border)
+      canvas.rectangle(bounds.x, bounds.y, bounds.w, bounds.h)
+    }
+  }
+}

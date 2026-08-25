@@ -2,20 +2,23 @@ import "ghost:math"
 import "lumen:canvas"
 import "lumen:color"
 import * from 'theme'
+import App from 'apps/app'
 
-// About Sol - the simplest possible app, mostly here to prove that a window
-// needs nothing but a title, a size, and a draw() to exist.
+// About Sol - the simplest possible app, mostly here to prove that even a
+// window built off App needs nothing but a title, a size, and a draw() to
+// exist.
 
-class About {
+class About extends App {
   constructor(context) {
-    this.title = 'About Sol'
-    this.width = 150
-    this.height = 110
+    super.constructor(context, 'About Sol', 150, 110)
+
     this.resizable = false
     this.spin = 0
   }
 
   update(dt, pointer) {
+    super.update(dt, pointer)
+
     this.spin = this.spin + dt * 0.6
   }
 

@@ -7,6 +7,7 @@ import * from 'theme'
 import * from 'wallpapers'
 import FileManager from 'apps/filemanager'
 import TextEdit from 'apps/textedit'
+import PixelArt from 'apps/pixelart'
 import SettingsApp from 'apps/settingsapp'
 import About from 'apps/about'
 
@@ -33,6 +34,23 @@ function drawDocumentGlyph(x, y) {
   canvas.filledRectangle(x + 5, y + 13, 8, 1)
   canvas.setColor(theme.accent)
   canvas.filledPolygon(x + 15, y + 1, x + 19, y + 1, x + 19, y + 5)
+}
+
+function drawPixelArtGlyph(x, y) {
+  canvas.setColor(theme.panelDark)
+  canvas.filledRectangle(x + 1, y + 1, 20, 20)
+
+  swatches = [theme.ember, theme.accent, color.rgb(123, 216, 143), color.rgb(94, 140, 255)]
+
+  size = 8
+
+  for (index = 0; index < swatches.length(); index++) {
+    row = math.floor(index / 2)
+    col = index % 2
+
+    canvas.setColor(swatches[index])
+    canvas.filledRectangle(x + 2 + col * size, y + 2 + row * size, size - 1, size - 1)
+  }
 }
 
 function drawGearGlyph(x, y) {
@@ -99,10 +117,13 @@ class Desktop {
       new DesktopIcon(8, 8 + metrics.iconHeight, 'Text Edit', drawDocumentGlyph, function() {
         context.wm.open(new TextEdit(context, null))
       }),
-      new DesktopIcon(8, 8 + metrics.iconHeight * 2, 'Settings', drawGearGlyph, function() {
+      new DesktopIcon(8, 8 + metrics.iconHeight * 2, 'Pixel Art', drawPixelArtGlyph, function() {
+        context.wm.open(new PixelArt(context, null))
+      }),
+      new DesktopIcon(8, 8 + metrics.iconHeight * 3, 'Settings', drawGearGlyph, function() {
         context.wm.open(new SettingsApp(context))
       }),
-      new DesktopIcon(8, 8 + metrics.iconHeight * 3, 'About Sol', drawInfoGlyph, function() {
+      new DesktopIcon(8, 8 + metrics.iconHeight * 4, 'About Sol', drawInfoGlyph, function() {
         context.wm.open(new About(context))
       })
     ]

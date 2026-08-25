@@ -6,6 +6,7 @@ import * from 'theme'
 import { truncate } from 'widgets'
 import FileManager from 'apps/filemanager'
 import TextEdit from 'apps/textedit'
+import PixelArt from 'apps/pixelart'
 import SettingsApp from 'apps/settingsapp'
 import About from 'apps/about'
 
@@ -27,6 +28,7 @@ class StartMenu {
     this.items = [
       launcher('File Manager', function() { context.wm.open(new FileManager(context)) }),
       launcher('Text Edit', function() { context.wm.open(new TextEdit(context, null)) }),
+      launcher('Pixel Art', function() { context.wm.open(new PixelArt(context, null)) }),
       launcher('Settings', function() { context.wm.open(new SettingsApp(context)) }),
       launcher('About Sol', function() { context.wm.open(new About(context)) })
     ]
