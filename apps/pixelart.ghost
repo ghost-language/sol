@@ -6,12 +6,15 @@ import * from 'theme'
 import { Button, ToggleButton } from 'widgets'
 import App from 'apps/app'
 
-// Pixel Art: a small sprite editor against a fixed ten-color palette,
-// following the same open/edit/Save convention as Text Edit - `path` is
-// null for a fresh, unsaved sprite, and File Manager opens any file whose
-// name ends in `.pixel` here instead of in Text Edit (see
-// filemanager.ghost's activate()). A sprite is saved as JSON: its size and
-// a flat list of palette indices, -1 where nothing has been drawn.
+// Pixel Art: a small sprite editor against a fixed ten-color palette, laid
+// out like Picotron's own Image Editor - a vertical strip of icon tools
+// down the left edge, the canvas beside it, and the palette as a grid
+// below rather than a labeled row of buttons. `path` is null for a fresh,
+// unsaved sprite, the same convention Text Edit uses, and File Manager
+// opens any file whose name ends in `.pixel` here instead of in Text Edit
+// (see filemanager.ghost's activate()). A sprite is saved as JSON: its
+// size and a flat list of palette indices, -1 where nothing has been
+// drawn.
 
 cols = 20
 rows = 20
@@ -29,6 +32,8 @@ palette = [
   color.rgb(184, 122, 58),
   color.rgb(94, 89, 138)
 ]
+
+paletteColumns = 5
 
 function blankPixels() {
   pixels = []
@@ -57,9 +62,96 @@ function titleFor(path) {
   return 'Pixel Art - ' + baseName(path)
 }
 
+// Every tool icon is drawn in a 12x12 slot, `active` true while it's the
+// currently selected tool - a ToggleButton's own fill goes from a dark
+// panel color to a bright accent one when active, so the glyph itself
+// swaps to whichever of theme.text/theme.panelDark still reads against
+// that.
+
+function drawSaveGlyph(x, y) {
+  canvas.setColor(theme.text)
+  canvas.rectangle(x + 2, y + 2, 8, 8)
+  canvas.filledRectangle(x + 4, y + 2, 4, 3)
+}
+
+function drawClearGlyph(x, y) {
+  canvas.setColor(theme.text)
+  canvas.line(x + 3, y + 3, x + 9, y + 3)
+  canvas.line(x + 5, y + 1, x + 7, y + 1)
+  canvas.rectangle(x + 4, y + 4, 4, 6)
+}
+
+function drawPencilGlyph(x, y, active) {
+  stroke = theme.text
+
+  if (active) {
+    stroke = theme.panelDark
+  }
+
+  canvas.setColor(stroke)
+  canvas.setLineWidth(2)
+  canvas.line(x + 3, y + 9, x + 9, y + 3)
+  canvas.setLineWidth(1)
+  canvas.setColor(theme.ember)
+  canvas.filledRectangle(x + 2, y + 8, 2, 2)
+}
+
+function drawFillGlyph(x, y, active) {
+  fill = theme.accent
+
+  if (active) {
+    fill = theme.panelDark
+  }
+
+  canvas.setColor(fill)
+  canvas.filledPolygon(x + 6, y + 2, x + 10, y + 8, x + 2, y + 8)
+  canvas.filledCircle(x + 6, y + 9, 2)
+}
+
+function drawEyedropperGlyph(x, y, active) {
+  stroke = theme.text
+
+  if (active) {
+    stroke = theme.panelDark
+  }
+
+  canvas.setColor(stroke)
+  canvas.setLineWidth(2)
+  canvas.line(x + 3, y + 9, x + 8, y + 4)
+  canvas.setLineWidth(1)
+  canvas.circle(x + 9, y + 3, 2)
+}
+
+function drawEraserGlyph(x, y, active) {
+  fill = color.rgb(230, 150, 170)
+
+  if (active) {
+    fill = theme.panelDark
+  }
+
+  canvas.setColor(fill)
+  canvas.filledRectangle(x + 2, y + 4, 8, 5)
+  canvas.setColor(theme.panelDark)
+  canvas.rectangle(x + 2, y + 4, 8, 5)
+}
+
+toolGlyphs = [drawPencilGlyph, drawFillGlyph, drawEyedropperGlyph, drawEraserGlyph]
+toolIds = ['pencil', 'fill', 'eyedropper', 'eraser']
+
+// toolButton builds one tool's ToggleButton. Built inside its own function
+// call, the same as settingsapp.ghost's wallpaperToggle/screensaverToggle -
+// a closure made directly inside the loop below would close over the
+// loop's own shared `id`, not a fresh one per tool.
+function toolButton(self, id, x, y) {
+  return new ToggleButton(x, y, 12, 12, null,
+    function() { return self.tool == id },
+    function() { self.tool = id }
+  )
+}
+
 class PixelArt extends App {
   constructor(context, path) {
-    super.constructor(context, titleFor(path), 150, 158)
+    super.constructor(context, titleFor(path), 150, 162)
 
     this.resizable = false
     this.path = path
@@ -69,18 +161,20 @@ class PixelArt extends App {
       this.load(context.vfs.readFile(path))
     }
 
-    this.canvasX = 4
-    this.canvasY = 16
+    this.canvasX = 20
+    this.canvasY = 4
     this.selected = 0
-    this.erasing = false
+    this.tool = 'pencil'
 
     self = this
-    this.saveButton = new Button(4, 2, 34, 10, 'Save', function() { self.save() })
-    this.clearButton = new Button(40, 2, 34, 10, 'Clear', function() { self.clear() })
-    this.eraserButton = new ToggleButton(76, 2, 34, 10, 'Erase',
-      function() { return self.erasing },
-      function() { self.erasing = !self.erasing }
-    )
+    this.saveButton = new Button(4, 4, 12, 12, null, function() { self.save() })
+    this.clearButton = new Button(4, 18, 12, 12, null, function() { self.clear() })
+
+    this.toolButtons = []
+
+    for (index = 0; index < toolIds.length(); index++) {
+      this.toolButtons.push(toolButton(self, toolIds[index], 4, 32 + index * 14))
+    }
   }
 
   // load reads back a sprite saved by save() below. Content is '' for a
@@ -115,12 +209,62 @@ class PixelArt extends App {
     this.dirty = true
   }
 
+  // floodFill replaces every pixel reachable from `index` by up/down/left/
+  // right steps across cells that share its starting color, iteratively -
+  // Ghost has no recursion limit worth trusting against a 20x20 grid, but
+  // an explicit stack costs nothing extra to write.
+  floodFill(index) {
+    target = this.pixels[index]
+
+    if (target == this.selected) {
+      return null
+    }
+
+    stack = [index]
+
+    while (stack.length() > 0) {
+      current = stack.pop()
+
+      if (this.pixels[current] != target) {
+        continue
+      }
+
+      this.pixels[current] = this.selected
+
+      col = current % cols
+      row = math.floor(current / cols)
+
+      if (col > 0) {
+        stack.push(current - 1)
+      }
+
+      if (col < cols - 1) {
+        stack.push(current + 1)
+      }
+
+      if (row > 0) {
+        stack.push(current - cols)
+      }
+
+      if (row < rows - 1) {
+        stack.push(current + cols)
+      }
+    }
+  }
+
   paletteX() {
-    return this.canvasX + cols * cell + 6
+    return this.canvasX
+  }
+
+  paletteY() {
+    return this.canvasY + rows * cell + 4
   }
 
   swatchBounds(index) {
-    return { x: this.paletteX(), y: this.canvasY + index * 13, w: 12, h: 12 }
+    col = index % paletteColumns
+    row = math.floor(index / paletteColumns)
+
+    return { x: this.paletteX() + col * 14, y: this.paletteY() + row * 14, w: 12, h: 12 }
   }
 
   // cellAt turns a window-local point into a pixel index, or -1 outside the
@@ -156,7 +300,10 @@ class PixelArt extends App {
 
     this.saveButton.update(pointer)
     this.clearButton.update(pointer)
-    this.eraserButton.update(pointer)
+
+    for (index = 0; index < this.toolButtons.length(); index++) {
+      this.toolButtons[index].update(pointer)
+    }
 
     if (!pointer.down) {
       return null
@@ -167,7 +314,6 @@ class PixelArt extends App {
     if (swatch >= 0) {
       if (pointer.pressed) {
         this.selected = swatch
-        this.erasing = false
       }
 
       return null
@@ -179,7 +325,25 @@ class PixelArt extends App {
       return null
     }
 
-    if (this.erasing) {
+    if (this.tool == 'eyedropper') {
+      if (pointer.pressed and this.pixels[index] >= 0) {
+        this.selected = this.pixels[index]
+        this.tool = 'pencil'
+      }
+
+      return null
+    }
+
+    if (this.tool == 'fill') {
+      if (pointer.pressed) {
+        this.floodFill(index)
+        this.dirty = true
+      }
+
+      return null
+    }
+
+    if (this.tool == 'eraser') {
       this.pixels[index] = -1
     } else {
       this.pixels[index] = this.selected
@@ -189,9 +353,7 @@ class PixelArt extends App {
   }
 
   draw(w, h, pointer) {
-    this.saveButton.draw(pointer)
-    this.clearButton.draw(pointer)
-    this.eraserButton.draw(pointer)
+    this.drawToolbar(pointer)
 
     if (this.dirty) {
       canvas.setColor(theme.ember)
@@ -201,6 +363,23 @@ class PixelArt extends App {
     this.drawGrid()
     this.drawPalette()
     this.drawMessageBar(w, h)
+  }
+
+  drawToolbar(pointer) {
+    this.saveButton.draw(pointer)
+    drawSaveGlyph(this.saveButton.x, this.saveButton.y)
+
+    this.clearButton.draw(pointer)
+    drawClearGlyph(this.clearButton.x, this.clearButton.y)
+
+    for (index = 0; index < this.toolButtons.length(); index++) {
+      button = this.toolButtons[index]
+      glyph = toolGlyphs[index]
+      active = this.tool == toolIds[index]
+
+      button.draw(pointer)
+      glyph(button.x, button.y, active)
+    }
   }
 
   drawGrid() {
@@ -231,7 +410,7 @@ class PixelArt extends App {
     for (index = 0; index < palette.length(); index++) {
       bounds = this.swatchBounds(index)
 
-      if (index == this.selected and !this.erasing) {
+      if (index == this.selected) {
         canvas.setColor(theme.text)
         canvas.rectangle(bounds.x - 1, bounds.y - 1, bounds.w + 2, bounds.h + 2)
       }
