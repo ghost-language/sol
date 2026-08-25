@@ -36,11 +36,12 @@ lumen .
   delete folders and files.
 - **Text Edit** - opens a file from File Manager, or starts blank; edits and
   saves back to the same disk.
-- **Pixel Art** - a small sprite editor against a fixed ten-color palette,
-  laid out like Picotron's own Image Editor: an icon toolbar down the left
-  edge (pencil, fill, eyedropper, eraser) beside the canvas, palette as a
-  grid below it. Opens blank from the desktop or start menu; File Manager
-  opens any file ending in `.pixel` here instead of in Text Edit.
+- **Pixel Art** - a small sprite editor laid out like Picotron's own Image
+  Editor: canvas on the left, a sidebar on the right with the 32-color
+  default palette as a grid above a grid of tool icons (pencil, line, box,
+  circle, fill, eyedropper, eraser). Opens blank from the desktop or start
+  menu; File Manager opens any file ending in `.pixel` here instead of in
+  Text Edit.
 - **Settings** - pick a wallpaper or a screensaver, and how long the machine
   sits idle before the screensaver takes over.
 - **About Sol** - the smallest possible app, mostly there to prove one only
