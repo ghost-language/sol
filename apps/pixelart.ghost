@@ -1,0 +1,666 @@
+import "ghost:math"
+import "ghost:json"
+import "lumen:canvas"
+import "lumen:color"
+import * from 'theme'
+import { Button, ToggleButton } from 'widgets'
+import App from 'apps/app'
+
+// Pixel Art: a small sprite editor laid out like Picotron's own Image
+// Editor - canvas on the left, a sidebar on the right holding the palette
+// (a grid, not a labeled row) above a grid of tool icons. `path` is null
+// for a fresh, unsaved sprite, the same convention Text Edit uses, and
+// File Manager opens any file whose name ends in `.pixel` here instead of
+// in Text Edit (see filemanager.ghost's activate()). A sprite is saved as
+// JSON: its size and a flat list of palette indices, -1 where nothing has
+// been drawn.
+//
+// Two of Picotron's own tools don't have a place here: it erases via a
+// right mouse button and samples color via a modifier key, and the
+// pointer Sol hands an app (window.ghost's contract) carries neither a
+// right-button nor a modifier state - so Eraser and Eyedropper are their
+// own tool buttons instead of held-key modes. Select, rectangular marquee,
+// and pan aren't here at all: nothing in this editor scrolls or needs a
+// floating selection to move.
+
+cols = 20
+rows = 20
+cell = 6
+
+// Sampled directly from Picotron's own default 32-color palette (8 columns,
+// 4 rows), read left to right, top to bottom.
+palette = [
+  color.rgb(0, 0, 0), color.rgb(116, 47, 41), color.rgb(171, 82, 54), color.rgb(255, 133, 109),
+  color.rgb(255, 204, 170), color.rgb(255, 0, 77), color.rgb(195, 0, 76), color.rgb(126, 37, 83),
+  color.rgb(73, 45, 56), color.rgb(95, 87, 79), color.rgb(162, 136, 121), color.rgb(194, 195, 199),
+  color.rgb(255, 241, 232), color.rgb(255, 172, 197), color.rgb(255, 119, 168), color.rgb(228, 13, 171),
+  color.rgb(29, 43, 83), color.rgb(28, 94, 172), color.rgb(0, 165, 161), color.rgb(41, 173, 255),
+  color.rgb(100, 223, 246), color.rgb(189, 154, 223), color.rgb(131, 118, 156), color.rgb(117, 78, 151),
+  color.rgb(18, 83, 89), color.rgb(0, 135, 81), color.rgb(0, 178, 81), color.rgb(0, 228, 54),
+  color.rgb(144, 236, 66), color.rgb(255, 236, 39), color.rgb(255, 163, 0), color.rgb(235, 107, 0)
+]
+
+paletteColumns = 8
+paletteSwatch = 9
+palettePitch = 10
+
+toolIds = ['pencil', 'line', 'box', 'circle', 'fill', 'eyedropper', 'eraser']
+toolColumns = 4
+toolSize = 15
+toolPitch = 16
+
+function blankPixels() {
+  pixels = []
+
+  for (index = 0; index < cols * rows; index++) {
+    pixels.push(-1)
+  }
+
+  return pixels
+}
+
+// baseName strips a vfs path down to its final segment, the same as Text
+// Edit's own copy of this - Sol's disk is flat enough that neither app
+// needs more of the path than that.
+function baseName(path) {
+  segments = path.split('/')
+
+  return segments[segments.length() - 1]
+}
+
+function titleFor(path) {
+  if (path == null) {
+    return 'Pixel Art - untitled'
+  }
+
+  return 'Pixel Art - ' + baseName(path)
+}
+
+// lineCells, boxCells, and circleCells turn a drag's start/end pixel
+// indices into the list of cells the shape covers - shared between the
+// live preview drawGrid() overlays while dragging and the commit that
+// actually paints them, so the two can never disagree.
+
+function lineCells(startIndex, endIndex) {
+  col = startIndex % cols
+  row = math.floor(startIndex / cols)
+  col1 = endIndex % cols
+  row1 = math.floor(endIndex / cols)
+
+  dx = math.abs(col1 - col)
+  dy = -math.abs(row1 - row)
+  sx = 1
+
+  if (col > col1) {
+    sx = -1
+  }
+
+  sy = 1
+
+  if (row > row1) {
+    sy = -1
+  }
+
+  err = dx + dy
+  cells = []
+
+  while (true) {
+    cells.push(row * cols + col)
+
+    if (col == col1 and row == row1) {
+      break
+    }
+
+    e2 = 2 * err
+
+    if (e2 >= dy) {
+      err = err + dy
+      col = col + sx
+    }
+
+    if (e2 <= dx) {
+      err = err + dx
+      row = row + sy
+    }
+  }
+
+  return cells
+}
+
+function boxCells(startIndex, endIndex) {
+  left = math.min(startIndex % cols, endIndex % cols)
+  right = math.max(startIndex % cols, endIndex % cols)
+  top = math.min(math.floor(startIndex / cols), math.floor(endIndex / cols))
+  bottom = math.max(math.floor(startIndex / cols), math.floor(endIndex / cols))
+  cells = []
+
+  for (col = left; col <= right; col++) {
+    cells.push(top * cols + col)
+    cells.push(bottom * cols + col)
+  }
+
+  for (row = top; row <= bottom; row++) {
+    cells.push(row * cols + left)
+    cells.push(row * cols + right)
+  }
+
+  return cells
+}
+
+// circleCells samples the outline of the ellipse inscribed in the drag's
+// bounding box, corner to corner - the same convention boxCells uses,
+// rather than treating the start point as a center.
+function circleCells(startIndex, endIndex) {
+  left = math.min(startIndex % cols, endIndex % cols)
+  right = math.max(startIndex % cols, endIndex % cols)
+  top = math.min(math.floor(startIndex / cols), math.floor(endIndex / cols))
+  bottom = math.max(math.floor(startIndex / cols), math.floor(endIndex / cols))
+
+  cx = (left + right) / 2
+  cy = (top + bottom) / 2
+  rx = (right - left) / 2
+  ry = (bottom - top) / 2
+
+  if (rx == 0 and ry == 0) {
+    return [top * cols + left]
+  }
+
+  steps = math.max(12, math.floor((rx + ry) * 6))
+  cells = []
+
+  for (step = 0; step < steps; step++) {
+    angle = step * (math.tau / steps)
+    col = math.round(cx + math.cos(angle) * rx)
+    row = math.round(cy + math.sin(angle) * ry)
+
+    if (col >= 0 and col < cols and row >= 0 and row < rows) {
+      cells.push(row * cols + col)
+    }
+  }
+
+  return cells
+}
+
+// Every icon is drawn in its button's own slot, `active` true while it's
+// the current tool - a ToggleButton's fill goes from a dark panel color to
+// a bright accent one when active, so the glyph swaps to whichever of
+// theme.text/theme.inverse still reads against that, the same pair
+// ToggleButton itself switches between for its label.
+
+function drawSaveGlyph(x, y) {
+  canvas.setColor(theme.text)
+  canvas.rectangle(x + 2, y + 2, 8, 8)
+  canvas.filledRectangle(x + 4, y + 2, 4, 3)
+}
+
+function drawClearGlyph(x, y) {
+  canvas.setColor(theme.text)
+  canvas.line(x + 3, y + 3, x + 9, y + 3)
+  canvas.line(x + 5, y + 1, x + 7, y + 1)
+  canvas.rectangle(x + 4, y + 4, 4, 6)
+}
+
+function drawPencilGlyph(x, y, active) {
+  stroke = theme.text
+
+  if (active) {
+    stroke = theme.inverse
+  }
+
+  canvas.setColor(stroke)
+  canvas.setLineWidth(2)
+  canvas.line(x + 4, y + 11, x + 11, y + 4)
+  canvas.setLineWidth(1)
+  canvas.setColor(theme.ember)
+  canvas.filledRectangle(x + 3, y + 10, 2, 2)
+}
+
+// Picotron's Line tool draws a plain stroke with no cap, which is the one
+// thing that visually tells it apart from Pencil's thicker, tipped one.
+function drawLineGlyph(x, y, active) {
+  stroke = theme.text
+
+  if (active) {
+    stroke = theme.inverse
+  }
+
+  canvas.setColor(stroke)
+  canvas.setLineWidth(1)
+  canvas.line(x + 4, y + 12, x + 12, y + 4)
+}
+
+function drawBoxGlyph(x, y, active) {
+  stroke = theme.text
+
+  if (active) {
+    stroke = theme.inverse
+  }
+
+  canvas.setColor(stroke)
+  canvas.rectangle(x + 3, y + 3, 9, 9)
+}
+
+function drawCircleGlyph(x, y, active) {
+  stroke = theme.text
+
+  if (active) {
+    stroke = theme.inverse
+  }
+
+  canvas.setColor(stroke)
+  canvas.circle(x + 7, y + 7, 5)
+}
+
+// A tilted bucket with a drip below it, after Picotron's own fill icon.
+function drawFillGlyph(x, y, active) {
+  fill = theme.accent
+
+  if (active) {
+    fill = theme.inverse
+  }
+
+  canvas.setColor(fill)
+  canvas.filledPolygon(x + 3, y + 3, x + 12, y + 5, x + 10, y + 11, x + 4, y + 10)
+  canvas.filledRectangle(x + 4, y + 12, 2, 2)
+}
+
+function drawEyedropperGlyph(x, y, active) {
+  stroke = theme.text
+
+  if (active) {
+    stroke = theme.inverse
+  }
+
+  canvas.setColor(stroke)
+  canvas.setLineWidth(2)
+  canvas.line(x + 4, y + 11, x + 9, y + 5)
+  canvas.setLineWidth(1)
+  canvas.circle(x + 10, y + 4, 2)
+}
+
+function drawEraserGlyph(x, y, active) {
+  fill = theme.ember
+
+  if (active) {
+    fill = theme.inverse
+  }
+
+  canvas.setColor(fill)
+  canvas.filledRectangle(x + 2, y + 5, 10, 6)
+  canvas.setColor(theme.panelDark)
+  canvas.rectangle(x + 2, y + 5, 10, 6)
+}
+
+toolGlyphs = [drawPencilGlyph, drawLineGlyph, drawBoxGlyph, drawCircleGlyph, drawFillGlyph, drawEyedropperGlyph, drawEraserGlyph]
+
+// toolButton builds one tool's ToggleButton. Built inside its own function
+// call, the same as settingsapp.ghost's wallpaperToggle/screensaverToggle -
+// a closure made directly inside the loop below would close over the
+// loop's own shared `id`, not a fresh one per tool.
+function toolButton(self, id, x, y) {
+  return new ToggleButton(x, y, toolSize, toolSize, null,
+    function() { return self.tool == id },
+    function() {
+      self.tool = id
+      self.dragStart = null
+      self.dragEnd = null
+    }
+  )
+}
+
+class PixelArt extends App {
+  constructor(context, path) {
+    super.constructor(context, titleFor(path), 212, 136, 'pixelart')
+
+    this.resizable = false
+    this.path = path
+    this.pixels = blankPixels()
+
+    if (path != null) {
+      this.load(context.vfs.readFile(path))
+    }
+
+    this.canvasX = 4
+    this.canvasY = 4
+    this.sidebarX = 128
+    this.selected = 0
+    this.tool = 'pencil'
+    this.dragStart = null
+    this.dragEnd = null
+
+    self = this
+    this.saveButton = new Button(this.sidebarX, 4, 12, 12, null, function() { self.save() })
+    this.clearButton = new Button(this.sidebarX + 16, 4, 12, 12, null, function() { self.clear() })
+
+    this.toolButtons = []
+
+    for (index = 0; index < toolIds.length(); index++) {
+      col = index % toolColumns
+      row = math.floor(index / toolColumns)
+
+      this.toolButtons.push(toolButton(self, toolIds[index], this.sidebarX + col * toolPitch, this.toolY() + row * toolPitch))
+    }
+  }
+
+  paletteY() {
+    return 20
+  }
+
+  toolY() {
+    return this.paletteY() + math.ceil(palette.length() / paletteColumns) * palettePitch + 4
+  }
+
+  // load reads back a sprite saved by save() below. Content is '' for a
+  // file File Manager's "New File" just created, which is left as a blank
+  // grid rather than treated as a malformed save.
+  load(content) {
+    if (content == null or content.trim() == '') {
+      return null
+    }
+
+    data = json.decode(content)
+
+    if (data.pixels != null) {
+      this.pixels = data.pixels
+    }
+  }
+
+  save() {
+    if (this.path == null) {
+      this.showMessage('Nothing to save this as yet')
+
+      return null
+    }
+
+    this.context.vfs.writeFile(this.path, json.encode({ width: cols, height: rows, pixels: this.pixels }))
+    this.dirty = false
+    this.showMessage('Saved', 1.2)
+  }
+
+  clear() {
+    this.pixels = blankPixels()
+    this.dirty = true
+  }
+
+  isShapeTool() {
+    return this.tool == 'line' or this.tool == 'box' or this.tool == 'circle'
+  }
+
+  // shapeCells is the live preview drawGrid() draws while dragging, and
+  // exactly what commitShape() paints on release - the two can't drift
+  // apart because they're the same list.
+  shapeCells() {
+    if (this.dragStart == null) {
+      return []
+    }
+
+    if (this.tool == 'line') {
+      return lineCells(this.dragStart, this.dragEnd)
+    }
+
+    if (this.tool == 'box') {
+      return boxCells(this.dragStart, this.dragEnd)
+    }
+
+    if (this.tool == 'circle') {
+      return circleCells(this.dragStart, this.dragEnd)
+    }
+
+    return []
+  }
+
+  commitShape() {
+    cells = this.shapeCells()
+
+    for (index = 0; index < cells.length(); index++) {
+      this.pixels[cells[index]] = this.selected
+    }
+  }
+
+  // floodFill replaces every pixel reachable from `index` by up/down/left/
+  // right steps across cells that share its starting color, iteratively -
+  // Ghost has no recursion limit worth trusting against a 20x20 grid, but
+  // an explicit stack costs nothing extra to write.
+  floodFill(index) {
+    target = this.pixels[index]
+
+    if (target == this.selected) {
+      return null
+    }
+
+    stack = [index]
+
+    while (stack.length() > 0) {
+      current = stack.pop()
+
+      if (this.pixels[current] != target) {
+        continue
+      }
+
+      this.pixels[current] = this.selected
+
+      col = current % cols
+      row = math.floor(current / cols)
+
+      if (col > 0) {
+        stack.push(current - 1)
+      }
+
+      if (col < cols - 1) {
+        stack.push(current + 1)
+      }
+
+      if (row > 0) {
+        stack.push(current - cols)
+      }
+
+      if (row < rows - 1) {
+        stack.push(current + cols)
+      }
+    }
+  }
+
+  swatchBounds(index) {
+    col = index % paletteColumns
+    row = math.floor(index / paletteColumns)
+
+    return { x: this.sidebarX + col * palettePitch, y: this.paletteY() + row * palettePitch, w: paletteSwatch, h: paletteSwatch }
+  }
+
+  // cellAt turns a window-local point into a pixel index, or -1 outside the
+  // grid - the same convention ScrollList's indexAt uses for rows.
+  cellAt(px, py) {
+    localX = px - this.canvasX
+    localY = py - this.canvasY
+
+    if (localX < 0 or localY < 0 or localX >= cols * cell or localY >= rows * cell) {
+      return -1
+    }
+
+    col = math.floor(localX / cell)
+    row = math.floor(localY / cell)
+
+    return row * cols + col
+  }
+
+  paletteAt(px, py) {
+    for (index = 0; index < palette.length(); index++) {
+      bounds = this.swatchBounds(index)
+
+      if (hitTest(px, py, bounds.x, bounds.y, bounds.w, bounds.h)) {
+        return index
+      }
+    }
+
+    return -1
+  }
+
+  update(dt, pointer) {
+    super.update(dt, pointer)
+
+    this.saveButton.update(pointer)
+    this.clearButton.update(pointer)
+
+    for (index = 0; index < this.toolButtons.length(); index++) {
+      this.toolButtons[index].update(pointer)
+    }
+
+    index = this.cellAt(pointer.x, pointer.y)
+
+    // A drag already in progress is handled here, unconditionally, so a
+    // release that lands outside the canvas - over the palette, say -
+    // still commits the shape instead of leaving it stuck mid-drag.
+    if (this.isShapeTool() and this.dragStart != null) {
+      if (pointer.down and index >= 0) {
+        this.dragEnd = index
+      }
+
+      if (pointer.released) {
+        this.commitShape()
+        this.dragStart = null
+        this.dragEnd = null
+        this.dirty = true
+      }
+
+      return null
+    }
+
+    swatch = this.paletteAt(pointer.x, pointer.y)
+
+    if (swatch >= 0) {
+      if (pointer.pressed) {
+        this.selected = swatch
+      }
+
+      return null
+    }
+
+    if (index < 0) {
+      return null
+    }
+
+    if (this.isShapeTool()) {
+      if (pointer.pressed) {
+        this.dragStart = index
+        this.dragEnd = index
+      }
+
+      return null
+    }
+
+    if (!pointer.down) {
+      return null
+    }
+
+    if (this.tool == 'eyedropper') {
+      if (pointer.pressed and this.pixels[index] >= 0) {
+        this.selected = this.pixels[index]
+        this.tool = 'pencil'
+      }
+
+      return null
+    }
+
+    if (this.tool == 'fill') {
+      if (pointer.pressed) {
+        this.floodFill(index)
+        this.dirty = true
+      }
+
+      return null
+    }
+
+    if (this.tool == 'eraser') {
+      this.pixels[index] = -1
+    } else {
+      this.pixels[index] = this.selected
+    }
+
+    this.dirty = true
+  }
+
+  draw(w, h, pointer) {
+    this.drawToolbar(pointer)
+
+    if (this.dirty) {
+      canvas.setColor(theme.ember)
+      canvas.filledRectangle(w - 7, 5, 3, 3)
+    }
+
+    this.drawGrid()
+    this.drawPalette()
+    this.drawMessageBar(w, h)
+  }
+
+  drawToolbar(pointer) {
+    this.saveButton.draw(pointer)
+    drawSaveGlyph(this.saveButton.x, this.saveButton.y)
+
+    this.clearButton.draw(pointer)
+    drawClearGlyph(this.clearButton.x, this.clearButton.y)
+
+    for (index = 0; index < this.toolButtons.length(); index++) {
+      button = this.toolButtons[index]
+      glyph = toolGlyphs[index]
+      active = this.tool == toolIds[index]
+
+      button.draw(pointer)
+      glyph(button.x, button.y, active)
+    }
+  }
+
+  drawGrid() {
+    drawInset(this.canvasX - 1, this.canvasY - 1, cols * cell + 2, rows * cell + 2)
+
+    for (row = 0; row < rows; row++) {
+      for (col = 0; col < cols; col++) {
+        value = this.pixels[row * cols + col]
+        x = this.canvasX + col * cell
+        y = this.canvasY + row * cell
+
+        if (value < 0) {
+          if ((row + col) % 2 == 0) {
+            canvas.setColor(theme.panelDark)
+          } else {
+            canvas.setColor(theme.panel)
+          }
+        } else {
+          canvas.setColor(palette[value])
+        }
+
+        canvas.filledRectangle(x, y, cell, cell)
+      }
+    }
+
+    this.drawShapePreview()
+  }
+
+  drawShapePreview() {
+    cells = this.shapeCells()
+
+    canvas.setColor(palette[this.selected])
+
+    for (index = 0; index < cells.length(); index++) {
+      col = cells[index] % cols
+      row = math.floor(cells[index] / cols)
+
+      canvas.filledRectangle(this.canvasX + col * cell, this.canvasY + row * cell, cell, cell)
+    }
+  }
+
+  drawPalette() {
+    for (index = 0; index < palette.length(); index++) {
+      bounds = this.swatchBounds(index)
+
+      if (index == this.selected) {
+        canvas.setColor(theme.text)
+        canvas.rectangle(bounds.x - 1, bounds.y - 1, bounds.w + 2, bounds.h + 2)
+      }
+
+      canvas.setColor(palette[index])
+      canvas.filledRectangle(bounds.x, bounds.y, bounds.w, bounds.h)
+      canvas.setColor(theme.border)
+      canvas.rectangle(bounds.x, bounds.y, bounds.w, bounds.h)
+    }
+  }
+}

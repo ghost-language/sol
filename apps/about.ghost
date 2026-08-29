@@ -2,21 +2,23 @@ import "ghost:math"
 import "lumen:canvas"
 import * from 'theme'
 import { blit, iconImage } from 'assets'
+import App from 'apps/app'
 
-// About Sol - the simplest possible app, mostly here to prove that a window
-// needs nothing but a title, a size, and a draw() to exist.
+// About Sol - the simplest possible app, mostly here to prove that even a
+// window built off App needs nothing but a title, a size, and a draw() to
+// exist.
 
-class About {
+class About extends App {
   constructor(context) {
-    this.title = 'About Sol'
-    this.icon = 'about'
-    this.width = 152
-    this.height = 122
+    super.constructor(context, 'About Sol', 152, 122, 'about')
+
     this.resizable = false
     this.pulse = 0
   }
 
   update(dt, pointer) {
+    super.update(dt, pointer)
+
     this.pulse = this.pulse + dt
   }
 

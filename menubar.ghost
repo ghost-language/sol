@@ -6,6 +6,7 @@ import * from 'theme'
 import { truncate } from 'widgets'
 import FileManager from 'apps/filemanager'
 import TextEdit from 'apps/textedit'
+import PixelArt from 'apps/pixelart'
 import SettingsApp from 'apps/settingsapp'
 import About from 'apps/about'
 
@@ -127,6 +128,7 @@ class Menubar {
     this.systemMenu.setItems([
       menuItem('Files', function() { context.wm.open(new FileManager(context)) }),
       menuItem('Text Edit', function() { context.wm.open(new TextEdit(context, null)) }),
+      menuItem('Pixel Art', function() { context.wm.open(new PixelArt(context, null)) }),
       menuItem('Settings', function() { context.wm.open(new SettingsApp(context)) }),
       menuItem('About Sol', function() { context.wm.open(new About(context)) })
     ])

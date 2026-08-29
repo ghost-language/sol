@@ -5,6 +5,7 @@ import * from 'theme'
 import { blit, iconImage } from 'assets'
 import FileManager from 'apps/filemanager'
 import TextEdit from 'apps/textedit'
+import PixelArt from 'apps/pixelart'
 import SettingsApp from 'apps/settingsapp'
 import About from 'apps/about'
 
@@ -35,6 +36,7 @@ class Dock {
     this.apps = [
       launcher('files', 'Files', function() { return new FileManager(context) }),
       launcher('textedit', 'Text Edit', function() { return new TextEdit(context, null) }),
+      launcher('pixelart', 'Pixel Art', function() { return new PixelArt(context, null) }),
       launcher('settings', 'Settings', function() { return new SettingsApp(context) }),
       launcher('about', 'About Sol', function() { return new About(context) })
     ]

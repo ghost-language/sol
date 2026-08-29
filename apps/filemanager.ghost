@@ -2,7 +2,9 @@ import "ghost:math"
 import "lumen:canvas"
 import * from 'theme'
 import { Button, ScrollList, TextField, row } from 'widgets'
+import App from 'apps/app'
 import TextEdit from 'apps/textedit'
+import PixelArt from 'apps/pixelart'
 
 // The two row glyphs are nine pixels of outline apiece - a tabbed rectangle
 // and a dog-eared page - which is as much folder and file as fits beside a
@@ -64,19 +66,14 @@ function promptFor(mode) {
 // the host machine's real filesystem. Creating, renaming, and deleting all
 // go through vfs so its per-folder manifest never drifts from what is
 // actually on disk.
-class FileManager {
+class FileManager extends App {
   constructor(context) {
-    this.context = context
-    this.title = 'File Manager'
-    this.icon = 'files'
-    this.width = 220
-    this.height = 150
+    super.constructor(context, 'File Manager', 220, 150, 'files')
+
     this.minWidth = 170
     this.minHeight = 110
     this.path = ''
     this.mode = 'browse'
-    this.message = ''
-    this.messageTimer = 0
 
     self = this
 
@@ -140,6 +137,8 @@ class FileManager {
       this.path = entry.path
 
       this.refresh()
+    } else if (entry.name.endsWith('.pixel')) {
+      this.context.wm.open(new PixelArt(this.context, entry.path))
     } else {
       this.context.wm.open(new TextEdit(this.context, entry.path))
     }
@@ -234,15 +233,8 @@ class FileManager {
     }
   }
 
-  showMessage(text) {
-    this.message = text
-    this.messageTimer = 2
-  }
-
   update(dt, pointer) {
-    if (this.messageTimer > 0) {
-      this.messageTimer = math.max(0, this.messageTimer - dt)
-    }
+    super.update(dt, pointer)
 
     if (this.mode == 'browse') {
       this.upButton.update(pointer)
@@ -298,20 +290,6 @@ class FileManager {
       this.cancelButton.draw(pointer)
     }
 
-    if (this.messageTimer > 0) {
-      this.drawMessage(w, h)
-    }
-  }
-
-  drawMessage(w, h) {
-    barHeight = 11
-
-    canvas.setColor(theme.panelDark)
-    canvas.filledRectangle(0, h - barHeight, w, barHeight)
-    canvas.setColor(theme.border)
-    canvas.filledRectangle(0, h - barHeight, w, 1)
-    canvas.setColor(theme.signal)
-
-    fonts.body.print(this.message, 3, h - barHeight + 3)
+    this.drawMessageBar(w, h)
   }
 }

@@ -4,9 +4,11 @@ import "lumen:mouse"
 import "lumen:timer"
 import * from 'theme'
 import * from 'wallpapers'
+import "lumen:color"
 import { blit, iconImage } from 'assets'
 import FileManager from 'apps/filemanager'
 import TextEdit from 'apps/textedit'
+import PixelArt from 'apps/pixelart'
 import SettingsApp from 'apps/settingsapp'
 import About from 'apps/about'
 
@@ -63,6 +65,25 @@ function drawSlidersGlyph(x, y) {
   canvas.filledRectangle(x + 12, y + 2, 4, 6)
   canvas.filledRectangle(x + 4, y + 8, 4, 6)
   canvas.filledRectangle(x + 13, y + 14, 4, 6)
+}
+
+// A four-color swatch, quartered, in place of a tool a fantasy desktop this
+// small has no room to draw convincingly.
+function drawPaletteGlyph(x, y) {
+  canvas.setColor(theme.panelDark)
+  canvas.filledRectangle(x + 1, y + 1, 18, 18)
+
+  swatches = [theme.ember, theme.accent, theme.signal, color.rgb(144, 236, 66)]
+
+  size = 8
+
+  for (index = 0; index < swatches.length(); index++) {
+    row = math.floor(index / 2)
+    col = index % 2
+
+    canvas.setColor(swatches[index])
+    canvas.filledRectangle(x + 2 + col * size, y + 2 + row * size, size - 1, size - 1)
+  }
 }
 
 // The same aperture the menu bar wears, at desktop size: a ring, a gap, and a
@@ -135,10 +156,13 @@ class Desktop {
       new DesktopIcon(7, top + metrics.iconHeight, 'Text Edit', 'textedit', drawDocumentGlyph, function() {
         context.wm.open(new TextEdit(context, null))
       }),
-      new DesktopIcon(7, top + metrics.iconHeight * 2, 'Settings', 'settings', drawSlidersGlyph, function() {
+      new DesktopIcon(7, top + metrics.iconHeight * 2, 'Pixel Art', 'pixelart', drawPaletteGlyph, function() {
+        context.wm.open(new PixelArt(context, null))
+      }),
+      new DesktopIcon(7, top + metrics.iconHeight * 3, 'Settings', 'settings', drawSlidersGlyph, function() {
         context.wm.open(new SettingsApp(context))
       }),
-      new DesktopIcon(7, top + metrics.iconHeight * 3, 'About Sol', 'about', drawMarkGlyph, function() {
+      new DesktopIcon(7, top + metrics.iconHeight * 4, 'About Sol', 'about', drawMarkGlyph, function() {
         context.wm.open(new About(context))
       })
     ]
