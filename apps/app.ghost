@@ -1,0 +1,70 @@
+import "ghost:math"
+import "lumen:canvas"
+import * from 'theme'
+
+// App is the base every built-in app can extend, so the fields a Window and
+// the dock/menu bar actually read (title, width, height, resizable,
+// minWidth, minHeight, icon) and the bits of state most apps end up wanting
+// anyway - a timed status message, a dirty flag - are set up and drawn the
+// same way everywhere, rather than each app growing its own copy of them
+// the way Text Edit's status/statusTimer and File Manager's
+// message/messageTimer used to before both moved onto this.
+//
+// Extending it is optional - window.ghost only ever asks an app object for
+// title, width, height, and draw(w, h, pointer), calling update(dt,
+// pointer), keypressed(key), textinput(text), and onClose() only if they
+// are there - so nothing about this base is something a plain app object
+// couldn't still do by hand.
+
+class App {
+  constructor(context, title, width, height, icon = null) {
+    this.context = context
+    this.title = title
+    this.width = width
+    this.height = height
+    this.icon = icon
+    this.minWidth = 90
+    this.minHeight = 54
+    this.resizable = true
+    this.dirty = false
+    this.message = ''
+    this.messageTimer = 0
+  }
+
+  // showMessage puts a line of text in the status bar drawMessageBar()
+  // draws, for `duration` seconds - Text Edit's "Saved", File Manager's
+  // "Already exists".
+  showMessage(text, duration = 2) {
+    this.message = text
+    this.messageTimer = duration
+  }
+
+  // update ticks the status message timer down. A subclass with its own
+  // per-frame work declares its own update(dt, pointer) and calls
+  // super.update(dt, pointer) alongside it, the same way ToggleButton calls
+  // super.draw(pointer) in widgets.ghost.
+  update(dt, pointer) {
+    if (this.messageTimer > 0) {
+      this.messageTimer = math.max(0, this.messageTimer - dt)
+    }
+  }
+
+  // drawMessageBar draws the same status strip along the bottom of the
+  // window File Manager's own message bar always has - call it last from a
+  // subclass's own draw(w, h, pointer), passing through the same w/h.
+  drawMessageBar(w, h) {
+    if (this.messageTimer <= 0) {
+      return null
+    }
+
+    barHeight = 11
+
+    canvas.setColor(theme.panelDark)
+    canvas.filledRectangle(0, h - barHeight, w, barHeight)
+    canvas.setColor(theme.border)
+    canvas.filledRectangle(0, h - barHeight, w, 1)
+    canvas.setColor(theme.signal)
+
+    fonts.body.print(this.message, 3, h - barHeight + 3)
+  }
+}

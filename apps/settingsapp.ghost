@@ -4,6 +4,7 @@ import * from 'theme'
 import { Button, ToggleButton, ScrollList, row } from 'widgets'
 import { options, paint } from 'wallpapers'
 import { screensavers } from 'screensavers'
+import App from 'apps/app'
 
 idlePresets = [1, 2, 5, 10, 15]
 
@@ -12,13 +13,10 @@ idlePresets = [1, 2, 5, 10, 15]
 // open rather than at startup - a file dropped into the wallpapers folder while
 // Sol is running turns up the next time this window does.
 
-class SettingsApp {
+class SettingsApp extends App {
   constructor(context) {
-    this.context = context
-    this.title = 'Settings'
-    this.icon = 'settings'
-    this.width = 232
-    this.height = 150
+    super.constructor(context, 'Settings', 232, 150, 'settings')
+
     this.minWidth = 200
     this.minHeight = 130
     this.tab = 'wallpaper'
@@ -102,6 +100,8 @@ class SettingsApp {
   }
 
   update(dt, pointer) {
+    super.update(dt, pointer)
+
     for (index = 0; index < this.tabButtons.length(); index++) {
       this.tabButtons[index].update(pointer)
     }

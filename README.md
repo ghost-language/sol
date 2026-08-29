@@ -40,16 +40,27 @@ lumen .
   on a window that cannot be resized. Zoom fills the desktop between the menu bar
   and the dock, and remembers where the window was. Every app is chrome wrapped
   around a plain object with a `draw(w, h, pointer)`; see `window.ghost`'s
-  comment for the rest of the contract.
+  comment for the rest of the contract. `apps/app.ghost`'s `App` is an
+  optional base class every built-in app extends, for the fields a window
+  and the dock/menu bar expect and a shared timed status message.
 - **File Manager** - browses Sol's own disk (`vfs.ghost`), sandboxed to
   Lumen's save directory rather than the real filesystem. Create, rename, and
   delete folders and files.
 - **Text Edit** - opens a file from File Manager, or starts blank; edits and
   saves back to the same disk.
+- **Pixel Art** - a small sprite editor laid out like Picotron's own Image
+  Editor: canvas on the left, a sidebar on the right with the 32-color
+  default palette as a grid above a grid of tool icons (pencil, line, box,
+  circle, fill, eyedropper, eraser). Opens blank from the desktop or dock;
+  File Manager opens any file ending in `.pixel` here instead of in Text
+  Edit.
 - **Settings** - pick a wallpaper or a screensaver, and how long the machine
   sits idle before the screensaver takes over.
 - **About Sol** - the smallest possible app, mostly there to prove one only
   needs a title, a size, and a `draw()`.
+
+See `GUIDE.md` for a fuller tour of the codebase - the frame loop, the app
+contract, `App`, and how to add a new app.
 
 ## Making it yours
 
@@ -60,7 +71,7 @@ which File Manager is browsing when it says "Disk":
 | Drop a PNG at        | To replace                                  |
 | -------------------- | ------------------------------------------- |
 | `cursor.png`         | the pointer                                 |
-| `icons/files.png`    | a desktop icon - also `textedit`, `settings`, `about` |
+| `icons/files.png`    | a desktop icon - also `textedit`, `pixelart`, `settings`, `about` |
 | `wallpapers/*.png`   | nothing; each one becomes a new choice in Settings |
 
 Icons are 20x20 and the pointer is drawn from its top-left corner, both at one
@@ -111,7 +122,7 @@ are worth knowing before adding a third:
 - **Assignment is scoped to the enclosing function, not the block.** A closure
   built inside a `for` loop closes over the loop's own variable, not a fresh
   copy of it - see `settingsapp.ghost`'s `wallpaperToggle`/`screensaverToggle`
-  and `taskbar.ghost`'s `launcher` for the fix (give the closure its own
+  and `dock.ghost`'s `launcher` for the fix (give the closure its own
   function call to be built inside).
 - **A class instance's dot-call syntax only resolves methods declared on the
   class.** A field set dynamically in a constructor (`this.action = fn`) is
